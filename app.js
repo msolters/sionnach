@@ -9,7 +9,7 @@ const HOP_LENGTH = 512;
 const HOP_FRAMES = 172;
 const MAX_AUDIO_SEC = 15;
 const MIN_AUDIO_SEC = 4;      // start predicting early with zero-padded windows
-const UPDATE_INTERVAL_MS = 2000;
+const UPDATE_INTERVAL_MS = 1000;
 const COMPACT_THRESHOLD = 500;
 const SESSION_URL = 'https://thesession.org/tunes';
 
@@ -63,6 +63,12 @@ const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let heroObserver = null;  // IntersectionObserver for hero card visibility
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
+let sheetLocked = false;        // user pinned the sheet music
+let silenceUnlockTimer = null;  // 120s silence before countdown starts
+let unlockInterval = null;      // 1s tick for countdown
+let unlockCountdown = 0;        // seconds remaining in unlock countdown
+const LOCK_SILENCE_WAIT = 120;  // seconds of no music before countdown
+const LOCK_COUNTDOWN = 15;      // countdown duration in seconds
 
 const $ = id => document.getElementById(id);
 
@@ -247,6 +253,7 @@ async function handleWorkerResult(data) {
             musicActive = false;
             lockCount = 0;
             sheetFetchId = null;
+            if (sheetLocked) startSilenceUnlockTimer();
             if (isRecording) $('statusText').textContent = 'Waiting for music...';
         }
     } else {
@@ -286,8 +293,8 @@ async function handleWorkerResult(data) {
     }
 
     // Run ONNX inference on both standard and foreground tensors
-    const WEIGHT_STD = 0.6;
-    const WEIGHT_FG = 0.4;
+    const WEIGHT_STD = 0.35;
+    const WEIGHT_FG = 0.65;
 
     // Helper: run inference on a set of tensors, return per-window probs
     async function inferWindows(windowTensors) {
@@ -480,13 +487,15 @@ function drawWindowOverlay(nFrames) {
 }
 
 function drawSilenceOverlay(chroma, nFrames) {
-    // Overlay opaque gray on frames where energy is very low (silence/noise)
+    // Overlay near-opaque dark on frames where energy is very low (silence/noise)
     const canvas = $('chromaCanvas');
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
-    const silenceThresh = 0.05;  // sum of chroma bins below this = silence
+    const silenceThresh = 0.05;
+    const bandH = 16;  // label band height (same as tune labels)
 
-    // Find contiguous silent regions for efficient drawing
+    // Collect contiguous silent regions
+    const regions = [];
     let inSilence = false;
     let silStart = 0;
 
@@ -503,13 +512,31 @@ function drawSilenceOverlay(chroma, nFrames) {
             silStart = x;
         } else if (!quiet && inSilence) {
             inSilence = false;
-            ctx.fillStyle = 'rgba(13,26,15,0.88)';
-            ctx.fillRect(silStart, 0, x - silStart, h);
+            regions.push([silStart, x]);
         }
     }
-    if (inSilence) {
-        ctx.fillStyle = 'rgba(13,26,15,0.88)';
-        ctx.fillRect(silStart, 0, w - silStart, h);
+    if (inSilence) regions.push([silStart, w]);
+
+    for (const [x0, x1] of regions) {
+        const rw = x1 - x0;
+        // Heavy dark overlay
+        ctx.fillStyle = 'rgba(10,18,12,0.93)';
+        ctx.fillRect(x0, 0, rw, h);
+
+        // "Noise" label at bottom (matching tune label style)
+        if (rw > 30) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(x0, h - bandH, rw, bandH);
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(x0 + 2, h - bandH, rw - 4, bandH);
+            ctx.clip();
+            ctx.fillStyle = '#4a6340';
+            ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('Noise', x0 + 4, h - bandH / 2);
+            ctx.restore();
+        }
     }
 }
 
@@ -570,6 +597,13 @@ function renderResults(predictions) {
 function updateLockOn(top) {
     if (!top || !top.id) return;
     if (!musicActive) return; // don't update lock-on during silence
+
+    // If sheet is user-locked, still track history but don't change sheet music
+    if (sheetLocked) {
+        resetSilenceUnlock();  // music is active, cancel any unlock countdown
+        updateHistory(top);
+        return;
+    }
 
     if (top.id === lockedTuneId) {
         // Same tune still locked — update confidence in history
@@ -662,6 +696,83 @@ function hideSheet() {
     lockCount = 0;
     if (autoScrollTimer) { clearTimeout(autoScrollTimer); autoScrollTimer = null; }
     stopSheetContext();
+}
+
+// ---- Sheet lock ----
+
+function toggleSheetLock() {
+    if (sheetLocked) {
+        unlockSheet();
+    } else {
+        lockSheet();
+    }
+}
+
+function lockSheet() {
+    sheetLocked = true;
+    updateLockUI();
+}
+
+function unlockSheet() {
+    sheetLocked = false;
+    clearSilenceUnlock();
+    updateLockUI();
+}
+
+function updateLockUI() {
+    const btn = $('sheetLock');
+    if (unlockCountdown > 0) {
+        btn.textContent = unlockCountdown;
+        btn.className = 'sheet-lock countdown';
+        btn.title = `Auto-unlock in ${unlockCountdown}s`;
+    } else if (sheetLocked) {
+        btn.textContent = '\u{1F512}';
+        btn.className = 'sheet-lock locked';
+        btn.title = 'Sheet music pinned — tap to unpin';
+    } else {
+        btn.textContent = '\u{1F513}';
+        btn.className = 'sheet-lock';
+        btn.title = 'Pin sheet music';
+    }
+}
+
+// When music is active, cancel any pending unlock timers
+function resetSilenceUnlock() {
+    if (silenceUnlockTimer) { clearTimeout(silenceUnlockTimer); silenceUnlockTimer = null; }
+    if (unlockInterval) { clearInterval(unlockInterval); unlockInterval = null; }
+    if (unlockCountdown > 0) {
+        unlockCountdown = 0;
+        updateLockUI();
+    }
+}
+
+function clearSilenceUnlock() {
+    if (silenceUnlockTimer) { clearTimeout(silenceUnlockTimer); silenceUnlockTimer = null; }
+    if (unlockInterval) { clearInterval(unlockInterval); unlockInterval = null; }
+    unlockCountdown = 0;
+}
+
+// Called when music goes silent while sheet is locked
+function startSilenceUnlockTimer() {
+    if (!sheetLocked) return;
+    if (silenceUnlockTimer) return; // already waiting
+    silenceUnlockTimer = setTimeout(() => {
+        silenceUnlockTimer = null;
+        if (!sheetLocked) return;
+        // Start the 15s countdown
+        unlockCountdown = LOCK_COUNTDOWN;
+        updateLockUI();
+        unlockInterval = setInterval(() => {
+            unlockCountdown--;
+            if (unlockCountdown <= 0) {
+                clearInterval(unlockInterval);
+                unlockInterval = null;
+                unlockSheet();
+            } else {
+                updateLockUI();
+            }
+        }, 1000);
+    }, LOCK_SILENCE_WAIT * 1000);
 }
 
 // ---- Auto-scroll to sheet music ----
@@ -838,6 +949,8 @@ async function init() {
     $('nextSetting').addEventListener('click', () => {
         if (sheetSettingIdx < sheetSettings.length - 1) { sheetSettingIdx++; renderSheet(); }
     });
+
+    $('sheetLock').addEventListener('click', toggleSheetLock);
 
     // Predictions click: load that tune's sheet music
     $('predictionsList').addEventListener('click', (e) => {

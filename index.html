@@ -138,6 +138,17 @@ button:disabled { opacity: 0.4; cursor: default; }
     align-items: center; justify-content: center;
 }
 .sheet-setting-label { font-size: 11px; color: #7a9470; min-width: 80px; text-align: center; }
+.sheet-lock {
+    width: 28px; height: 28px; padding: 0; margin-left: 4px;
+    background: #2a3528; color: #7a9470; border-radius: 6px;
+    font-size: 14px; line-height: 1; display: flex;
+    align-items: center; justify-content: center;
+    cursor: pointer; border: none; transition: background 0.15s, color 0.15s;
+    position: relative; flex-shrink: 0;
+}
+.sheet-lock:hover { background: #3a4a35; }
+.sheet-lock.locked { background: #3d5a2a; color: #a8cc8c; }
+.sheet-lock.countdown { background: #5a3a2a; color: #e8a060; }
 .sheet-context {
     display: flex; align-items: center; gap: 10px;
     flex: 1; justify-content: center; min-width: 0;
@@ -360,6 +371,7 @@ canvas { display: block; border-radius: 6px; }
                                 <span class="sheet-setting-label" id="settingLabel">Setting 1 of 1</span>
                                 <button class="sheet-nav-btn" id="nextSetting">&rsaquo;</button>
                             </div>
+                            <button class="sheet-lock" id="sheetLock" title="Pin sheet music">&#x1F513;</button>
                         </div>
                         <div class="sheet-render" id="sheetRender"></div>
                     </div>
