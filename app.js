@@ -486,44 +486,60 @@ function drawWindowOverlay(nFrames) {
     }
 }
 
+// Spectral flatness of a chroma frame: geometric mean / arithmetic mean
+// 1.0 = perfectly flat (noise), 0.0 = one dominant pitch (melodic)
+function chromaFlatness(chroma, nFrames, f) {
+    let logSum = 0, sum = 0;
+    for (let c = 0; c < N_CHROMA; c++) {
+        const v = Math.max(chroma[c * nFrames + f], 1e-10);
+        logSum += Math.log(v);
+        sum += v;
+    }
+    const geoMean = Math.exp(logSum / N_CHROMA);
+    const ariMean = sum / N_CHROMA;
+    return ariMean > 1e-10 ? geoMean / ariMean : 1.0;
+}
+
 function drawSilenceOverlay(chroma, nFrames) {
-    // Overlay near-opaque dark on frames where energy is very low (silence/noise)
     const canvas = $('chromaCanvas');
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
-    const silenceThresh = 0.05;
-    const bandH = 16;  // label band height (same as tune labels)
+    const bandH = 16;
+    const FLATNESS_THRESH = 0.45;  // above this = noise/ambient
 
-    // Collect contiguous silent regions
+    // Collect contiguous noisy regions
     const regions = [];
-    let inSilence = false;
-    let silStart = 0;
+    let inNoise = false;
+    let noiseStart = 0;
 
     for (let x = 0; x <= w; x++) {
         const f = Math.floor((x / w) * nFrames);
-        let energy = 0;
-        if (f < nFrames) {
+        let isNoise;
+        if (f >= nFrames) {
+            isNoise = true;
+        } else {
+            // Check both: low total energy OR flat chroma distribution
+            let energy = 0;
             for (let c = 0; c < N_CHROMA; c++) energy += chroma[c * nFrames + f];
+            const flatness = chromaFlatness(chroma, nFrames, f);
+            isNoise = energy < 0.05 || flatness > FLATNESS_THRESH;
         }
-        const quiet = f >= nFrames || energy < silenceThresh;
 
-        if (quiet && !inSilence) {
-            inSilence = true;
-            silStart = x;
-        } else if (!quiet && inSilence) {
-            inSilence = false;
-            regions.push([silStart, x]);
+        if (isNoise && !inNoise) {
+            inNoise = true;
+            noiseStart = x;
+        } else if (!isNoise && inNoise) {
+            inNoise = false;
+            regions.push([noiseStart, x]);
         }
     }
-    if (inSilence) regions.push([silStart, w]);
+    if (inNoise) regions.push([noiseStart, w]);
 
     for (const [x0, x1] of regions) {
         const rw = x1 - x0;
-        // Heavy dark overlay
         ctx.fillStyle = 'rgba(10,18,12,0.93)';
         ctx.fillRect(x0, 0, rw, h);
 
-        // "Noise" label at bottom (matching tune label style)
         if (rw > 30) {
             ctx.fillStyle = 'rgba(0,0,0,0.5)';
             ctx.fillRect(x0, h - bandH, rw, bandH);
