@@ -712,8 +712,12 @@ function updateLockOn(top) {
     } else {
         sheetFetchId = top.id;
         lockCount = 1;
-        // New tune detected — show "Coming up" immediately
-        if (lockedTuneId) showComingUpForTune(top.id);
+    }
+
+    // Show "Coming up" with opacity scaling by confidence
+    if (lockedTuneId && lockCount < LOCK_THRESHOLD) {
+        const confidence = lockCount / LOCK_THRESHOLD;
+        showComingUpForTune(top.id, confidence);
     }
 
     if (lockCount >= LOCK_THRESHOLD) {
@@ -981,17 +985,19 @@ function updateCountdownBorder() {
     render.style.borderColor = `rgb(${r},${g},${b})`;
 }
 
-// Show "Coming up" context for a given tune
-function showComingUpForTune(tuneId) {
+// Show "Coming up" context for a given tune, opacity scaled by confidence (0-1)
+function showComingUpForTune(tuneId, confidence) {
     const entry = tuneById[tuneId];
     if (!entry) return;
     const el = $('sheetContext');
     const typeInfo = TYPE_INFO[entry.type];
     const typeLabel = typeInfo ? `<span class="ctx-type">${typeInfo.label}</span>` : '';
+    const opacity = confidence != null ? (0.3 + 0.7 * confidence) : 1;
     el.classList.remove('visible');
     setTimeout(() => {
         el.innerHTML = `<span class="sheet-context-name">Coming up: ${entry.name}</span>` +
             (typeLabel ? `<span class="sheet-context-meta">${typeLabel}</span>` : '');
+        el.style.opacity = opacity;
         el.classList.add('visible');
     }, 300);
 }
@@ -1100,6 +1106,7 @@ function updateSheetContext() {
     if (lockedTuneConf > 0) parts.push(`<span class="ctx-conf">${(lockedTuneConf * 100).toFixed(0)}%</span>`);
     el.innerHTML = `<span class="sheet-context-name">${entry.name}</span>` +
         (parts.length ? `<span class="sheet-context-meta">${parts.join(' · ')}</span>` : '');
+    el.style.opacity = '';
     el.classList.add('visible');
 }
 
