@@ -6,6 +6,7 @@ const SAMPLE_RATE = 22050;
 const N_CHROMA = 12;
 const WINDOW_FRAMES = 344;
 const HOP_LENGTH = 512;
+const HOP_FRAMES = 172;
 const MAX_AUDIO_SEC = 15;
 const MIN_AUDIO_SEC = 4;      // start predicting early with zero-padded windows
 const UPDATE_INTERVAL_MS = 2000;
@@ -60,6 +61,8 @@ const SILENCE_CYCLES = 2;  // cycles of quiet before declaring "stopped"
 let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let heroObserver = null;  // IntersectionObserver for hero card visibility
+let windowRegions = [];   // per-window predictions for chromagram overlay
+let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
 
 const $ = id => document.getElementById(id);
 
@@ -265,6 +268,7 @@ async function handleWorkerResult(data) {
         }
     }
 
+    lastNFrames = nFrames;
     drawChromagram(chroma, nFrames);
 
     if (tensors.length === 0) return;
@@ -272,9 +276,19 @@ async function handleWorkerResult(data) {
     // If silent, skip inference — keep the last results on screen
     if (!musicActive) return;
 
+    // Compute window frame positions (mirrors worker logic)
+    const winStarts = [];
+    if (nFrames < WINDOW_FRAMES) {
+        winStarts.push(0);
+    } else {
+        for (let s = 0; s <= nFrames - WINDOW_FRAMES; s += HOP_FRAMES) winStarts.push(s);
+    }
+
     // Run ONNX inference
     const allProbs = [];
-    for (const tensorData of tensors) {
+    const regions = [];
+    for (let w = 0; w < tensors.length; w++) {
+        const tensorData = tensors[w];
         const input = new ort.Tensor('float32', tensorData, [1, 2, N_CHROMA, WINDOW_FRAMES]);
         const output = await onnxSession.run({ input });
         const logits = output.output.data;
@@ -286,7 +300,21 @@ async function handleWorkerResult(data) {
         for (let i = 0; i < logits.length; i++) { probs[i] = Math.exp(logits[i] - maxL); sum += probs[i]; }
         for (let i = 0; i < probs.length; i++) probs[i] /= sum;
         allProbs.push(probs);
+
+        // Find top prediction for this window
+        let topIdx = 0;
+        for (let i = 1; i < probs.length; i++) if (probs[i] > probs[topIdx]) topIdx = i;
+        const startFrame = winStarts[w] || 0;
+        const endFrame = Math.min(startFrame + WINDOW_FRAMES, nFrames);
+        regions.push({
+            startFrame, endFrame,
+            id: tuneIndex[topIdx]?.id,
+            name: tuneIndex[topIdx]?.name || '?',
+            prob: probs[topIdx],
+        });
     }
+    windowRegions = regions;
+    drawWindowOverlay(nFrames);
 
     const nClasses = allProbs[0].length;
     const avg = new Float32Array(nClasses);
@@ -351,6 +379,69 @@ function drawChromagram(chroma, nFrames) {
         }
     }
     ctx.putImageData(img, 0, 0);
+}
+
+// ---- UI: Window overlay on chromagram ----
+
+// Deterministic color from tune ID
+function tuneColor(id) {
+    let h = ((id * 2654435761) >>> 0) % 360;  // Knuth hash for spread
+    return `hsla(${h}, 70%, 55%, 0.25)`;
+}
+
+function drawWindowOverlay(nFrames) {
+    if (windowRegions.length === 0) return;
+    const canvas = $('chromaCanvas');
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const bandH = 18;  // height of the label band at top
+
+    // Group consecutive windows with same tune ID into merged regions
+    const merged = [];
+    for (const r of windowRegions) {
+        const last = merged[merged.length - 1];
+        if (last && last.id === r.id) {
+            last.endFrame = r.endFrame;
+            last.prob = Math.max(last.prob, r.prob);
+        } else {
+            merged.push({ ...r });
+        }
+    }
+
+    for (const region of merged) {
+        const x0 = Math.round((region.startFrame / nFrames) * w);
+        const x1 = Math.round((region.endFrame / nFrames) * w);
+        const rw = x1 - x0;
+
+        // Tinted overlay across full height
+        ctx.fillStyle = tuneColor(region.id);
+        ctx.fillRect(x0, 0, rw, h);
+
+        // Label band at top
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(x0, 0, rw, bandH);
+
+        // Tune name label
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x0 + 2, 0, rw - 4, bandH);
+        ctx.clip();
+        ctx.fillStyle = '#e7e9ea';
+        ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(region.name, x0 + 4, bandH / 2);
+        ctx.restore();
+
+        // Separator line between regions
+        if (merged.indexOf(region) > 0) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(x0, 0);
+            ctx.lineTo(x0, h);
+            ctx.stroke();
+        }
+    }
 }
 
 // ---- UI: Results ----
