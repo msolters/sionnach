@@ -205,7 +205,7 @@ function updateTimerAndLevel() {
     const db = 20 * Math.log10(Math.max(inputLevel, 1e-10));
     const norm = Math.min(Math.max((db + 60) / 55, 0), 1);
     $('levelFill').style.width = `${norm * 100}%`;
-    $('levelFill').style.background = norm > 0.8 ? '#f4212e' : norm > 0.1 ? '#2ecc71' : '#556677';
+    $('levelFill').style.background = norm > 0.8 ? '#c45c3e' : norm > 0.1 ? '#4c8c30' : '#4a6340';
 
     const secCaptured = Math.floor(totalSamples / SAMPLE_RATE);
     if (secCaptured < MIN_AUDIO_SEC) {
@@ -270,6 +270,7 @@ async function handleWorkerResult(data) {
 
     lastNFrames = nFrames;
     drawChromagram(chroma, nFrames);
+    drawSilenceOverlay(chroma, nFrames);
 
     if (tensors.length === 0) return;
 
@@ -339,9 +340,11 @@ async function handleWorkerResult(data) {
 
 // ---- UI: Chromagram ----
 
+// Forest colormap: dark soil -> bark brown -> deep green -> leaf green -> bright canopy
 const CMAP = [
-    [13,8,40],[56,15,95],[103,18,119],[146,27,107],
-    [186,52,83],[219,89,60],[244,140,37],[253,199,39],[252,253,164],
+    [15,12,8],[35,28,15],[60,42,18],[80,58,22],
+    [40,70,25],[30,95,30],[50,130,40],[85,170,55],
+    [140,200,80],[195,225,130],
 ];
 
 function colorMap(v) {
@@ -383,10 +386,11 @@ function drawChromagram(chroma, nFrames) {
 
 // ---- UI: Window overlay on chromagram ----
 
-// Deterministic color from tune ID
+// Deterministic forest-hue color from tune ID
 function tuneColor(id) {
-    let h = ((id * 2654435761) >>> 0) % 360;  // Knuth hash for spread
-    return `hsla(${h}, 70%, 55%, 0.25)`;
+    // Spread across greens, teals, and warm earth tones
+    let h = 80 + (((id * 2654435761) >>> 0) % 120);  // 80-200 range (greens to teals)
+    return `hsla(${h}, 50%, 45%, 0.2)`;
 }
 
 function drawWindowOverlay(nFrames) {
@@ -394,7 +398,7 @@ function drawWindowOverlay(nFrames) {
     const canvas = $('chromaCanvas');
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
-    const bandH = 18;  // height of the label band at top
+    const bandH = 16;  // height of the label band at bottom
 
     // Group consecutive windows with same tune ID into merged regions
     const merged = [];
@@ -417,30 +421,64 @@ function drawWindowOverlay(nFrames) {
         ctx.fillStyle = tuneColor(region.id);
         ctx.fillRect(x0, 0, rw, h);
 
-        // Label band at top
+        // Label band at bottom
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        ctx.fillRect(x0, 0, rw, bandH);
+        ctx.fillRect(x0, h - bandH, rw, bandH);
 
         // Tune name label
         ctx.save();
         ctx.beginPath();
-        ctx.rect(x0 + 2, 0, rw - 4, bandH);
+        ctx.rect(x0 + 2, h - bandH, rw - 4, bandH);
         ctx.clip();
-        ctx.fillStyle = '#e7e9ea';
+        ctx.fillStyle = '#c8e0b0';
         ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
         ctx.textBaseline = 'middle';
-        ctx.fillText(region.name, x0 + 4, bandH / 2);
+        ctx.fillText(region.name, x0 + 4, h - bandH / 2);
         ctx.restore();
 
         // Separator line between regions
         if (merged.indexOf(region) > 0) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.strokeStyle = 'rgba(200,224,176,0.3)';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(x0, 0);
             ctx.lineTo(x0, h);
             ctx.stroke();
         }
+    }
+}
+
+function drawSilenceOverlay(chroma, nFrames) {
+    // Overlay opaque gray on frames where energy is very low (silence/noise)
+    const canvas = $('chromaCanvas');
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    const silenceThresh = 0.05;  // sum of chroma bins below this = silence
+
+    // Find contiguous silent regions for efficient drawing
+    let inSilence = false;
+    let silStart = 0;
+
+    for (let x = 0; x <= w; x++) {
+        const f = Math.floor((x / w) * nFrames);
+        let energy = 0;
+        if (f < nFrames) {
+            for (let c = 0; c < N_CHROMA; c++) energy += chroma[c * nFrames + f];
+        }
+        const quiet = f >= nFrames || energy < silenceThresh;
+
+        if (quiet && !inSilence) {
+            inSilence = true;
+            silStart = x;
+        } else if (!quiet && inSilence) {
+            inSilence = false;
+            ctx.fillStyle = 'rgba(30,30,30,0.75)';
+            ctx.fillRect(silStart, 0, x - silStart, h);
+        }
+    }
+    if (inSilence) {
+        ctx.fillStyle = 'rgba(30,30,30,0.75)';
+        ctx.fillRect(silStart, 0, w - silStart, h);
     }
 }
 
@@ -575,7 +613,7 @@ function renderSheet() {
         paddingtop: 10,
         paddingbottom: 10,
         scale: 1.2,
-        foregroundColor: '#d0d8e4',
+        foregroundColor: '#c8e0b0',
     });
 
     $('settingLabel').textContent = `Setting ${sheetSettingIdx + 1} of ${sheetSettings.length}`;
