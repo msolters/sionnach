@@ -729,9 +729,11 @@ function renderSheet() {
     const noteLen = '1/8';
     const kField = abcKeyField(keyStr);
 
-    // Strip any existing header lines (T:, M:, K:, L:, X:) from the body
-    const body = setting.abc.split('\n').filter(l => !l.match(/^[TMLKXW]:/)).join('\n');
-    const abc = `X:1\nM:${meter}\nL:${noteLen}\nK:${kField}\n${body}`;
+    // Strip any existing header lines from the body
+    const body = setting.abc.split('\n').filter(l => !l.match(/^[TMLKXWRS]:/)).join('\n');
+    const tuneName = entry?.name || '';
+    const typeLabel = typeInfo?.label || '';
+    const abc = `X:1\nT:${tuneName}\nR:${typeLabel}\nM:${meter}\nL:${noteLen}\nK:${kField}\n${body}`;
 
     ABCJS.renderAbc('sheetRender', abc, {
         responsive: 'resize',
