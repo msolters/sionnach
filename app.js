@@ -49,6 +49,7 @@ let currentTempo = null;
 let sessionHistory = [];
 let lastTopTuneId = null;
 let lockedTuneId = null;
+let lockedTuneConf = 0;
 let lockCount = 0;
 const LOCK_THRESHOLD = 2;  // consecutive same-tune updates to trigger fetch
 let sheetSettings = [];
@@ -64,11 +65,14 @@ let heroObserver = null;  // IntersectionObserver for hero card visibility
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
 let sheetLocked = false;        // user pinned the sheet music
-let silenceUnlockTimer = null;  // 120s silence before countdown starts
+let silenceUnlockTimer = null;  // 60s silence before countdown starts
 let unlockInterval = null;      // 1s tick for countdown
 let unlockCountdown = 0;        // seconds remaining in unlock countdown
-const LOCK_SILENCE_WAIT = 120;  // seconds of no music before countdown
-const LOCK_COUNTDOWN = 15;      // countdown duration in seconds
+let rivalTuneId = null;         // different tune detected while locked
+let rivalCount = 0;             // consecutive windows with rival tune
+const LOCK_SILENCE_WAIT = 60;   // seconds of no music before countdown
+const LOCK_COUNTDOWN = 5;       // countdown duration in seconds
+const RIVAL_THRESHOLD = 3;      // consecutive rival-tune windows to trigger countdown
 
 const $ = id => document.getElementById(id);
 
@@ -637,13 +641,31 @@ function updateLockOn(top) {
 
     // If sheet is user-locked, still track history but don't change sheet music
     if (sheetLocked) {
-        resetSilenceUnlock();  // music is active, cancel any unlock countdown
+        if (top.id === lockedTuneId) {
+            // Same tune — reset rival tracking and any countdown
+            rivalTuneId = null;
+            rivalCount = 0;
+            resetUnlockCountdown();
+        } else {
+            // Different tune detected — track as rival
+            if (top.id === rivalTuneId) {
+                rivalCount++;
+            } else {
+                rivalTuneId = top.id;
+                rivalCount = 1;
+            }
+            if (rivalCount >= RIVAL_THRESHOLD && unlockCountdown === 0 && !unlockInterval) {
+                startUnlockCountdown();
+            }
+        }
         updateHistory(top);
         return;
     }
 
     if (top.id === lockedTuneId) {
-        // Same tune still locked — update confidence in history
+        // Same tune still locked — update confidence in history and context
+        lockedTuneConf = top.prob;
+        updateSheetContext();
         if (sessionHistory.length > 0 && sessionHistory[0].id === top.id) {
             sessionHistory[0].conf = top.prob;
             renderHistory();
@@ -660,6 +682,7 @@ function updateLockOn(top) {
 
     if (lockCount >= LOCK_THRESHOLD) {
         updateHistory(top);
+        lockedTuneConf = top.prob;
         loadSheetForTune(top.id);
     }
 }
@@ -739,7 +762,19 @@ function hideSheet() {
 
 function toggleSheetLock() {
     if (sheetLocked) {
-        unlockSheet();
+        // If countdown is active, clicking resets conditions (re-locks)
+        if (unlockCountdown > 0 || unlockInterval || silenceUnlockTimer) {
+            resetUnlockCountdown();
+            rivalTuneId = null;
+            rivalCount = 0;
+            // Re-trigger buzz
+            const render = $('sheetRender');
+            render.classList.remove('locked');
+            void render.offsetWidth;
+            render.classList.add('locked');
+        } else {
+            unlockSheet();
+        }
     } else {
         lockSheet();
     }
@@ -747,34 +782,57 @@ function toggleSheetLock() {
 
 function lockSheet() {
     sheetLocked = true;
+    // Re-trigger buzz animation
+    const render = $('sheetRender');
+    render.classList.remove('locked');
+    void render.offsetWidth; // force reflow
     updateLockUI();
 }
 
 function unlockSheet() {
     sheetLocked = false;
-    clearSilenceUnlock();
+    clearAllUnlockTimers();
     updateLockUI();
 }
 
 function updateLockUI() {
-    const btn = $('sheetLock');
+    const icon = $('sheetLockIcon');
+    const render = $('sheetRender');
     if (unlockCountdown > 0) {
-        btn.textContent = unlockCountdown;
-        btn.className = 'sheet-lock countdown';
-        btn.title = `Auto-unlock in ${unlockCountdown}s`;
+        icon.textContent = unlockCountdown;
+        icon.className = 'sheet-lock-icon countdown';
+        render.classList.add('locked');
     } else if (sheetLocked) {
-        btn.textContent = '\u{1F512}';
-        btn.className = 'sheet-lock locked';
-        btn.title = 'Sheet music pinned — tap to unpin';
+        icon.textContent = '\u{1F512}';
+        icon.className = 'sheet-lock-icon locked';
+        render.classList.add('locked');
     } else {
-        btn.textContent = '\u{1F513}';
-        btn.className = 'sheet-lock';
-        btn.title = 'Pin sheet music';
+        icon.textContent = '\u{1F513}';
+        icon.className = 'sheet-lock-icon';
+        render.classList.remove('locked');
     }
 }
 
-// When music is active, cancel any pending unlock timers
-function resetSilenceUnlock() {
+// Start the 15s visible countdown to unlock
+function startUnlockCountdown() {
+    if (!sheetLocked) return;
+    if (unlockInterval) return; // already counting
+    unlockCountdown = LOCK_COUNTDOWN;
+    updateLockUI();
+    unlockInterval = setInterval(() => {
+        unlockCountdown--;
+        if (unlockCountdown <= 0) {
+            clearInterval(unlockInterval);
+            unlockInterval = null;
+            unlockSheet();
+        } else {
+            updateLockUI();
+        }
+    }, 1000);
+}
+
+// Cancel any active countdown (user re-confirmed lock)
+function resetUnlockCountdown() {
     if (silenceUnlockTimer) { clearTimeout(silenceUnlockTimer); silenceUnlockTimer = null; }
     if (unlockInterval) { clearInterval(unlockInterval); unlockInterval = null; }
     if (unlockCountdown > 0) {
@@ -783,32 +841,22 @@ function resetSilenceUnlock() {
     }
 }
 
-function clearSilenceUnlock() {
+function clearAllUnlockTimers() {
     if (silenceUnlockTimer) { clearTimeout(silenceUnlockTimer); silenceUnlockTimer = null; }
     if (unlockInterval) { clearInterval(unlockInterval); unlockInterval = null; }
     unlockCountdown = 0;
+    rivalTuneId = null;
+    rivalCount = 0;
 }
 
-// Called when music goes silent while sheet is locked
+// Called when music goes silent while sheet is locked — wait 60s then countdown
 function startSilenceUnlockTimer() {
     if (!sheetLocked) return;
     if (silenceUnlockTimer) return; // already waiting
     silenceUnlockTimer = setTimeout(() => {
         silenceUnlockTimer = null;
         if (!sheetLocked) return;
-        // Start the 15s countdown
-        unlockCountdown = LOCK_COUNTDOWN;
-        updateLockUI();
-        unlockInterval = setInterval(() => {
-            unlockCountdown--;
-            if (unlockCountdown <= 0) {
-                clearInterval(unlockInterval);
-                unlockInterval = null;
-                unlockSheet();
-            } else {
-                updateLockUI();
-            }
-        }, 1000);
+        startUnlockCountdown();
     }, LOCK_SILENCE_WAIT * 1000);
 }
 
@@ -838,6 +886,7 @@ function updateSheetContext() {
     if (typeInfo) parts.push(`<span class="ctx-type">${typeInfo.label}</span>`);
     if (typeInfo) parts.push(typeInfo.timeSig);
     if (currentTempo) parts.push(`${currentTempo} BPM`);
+    if (lockedTuneConf > 0) parts.push(`<span class="ctx-conf">${(lockedTuneConf * 100).toFixed(0)}%</span>`);
     el.innerHTML = `<span class="sheet-context-name">${entry.name}</span>` +
         (parts.length ? `<span class="sheet-context-meta">${parts.join(' · ')}</span>` : '');
 }
@@ -856,7 +905,7 @@ function initHeroObserver() {
     const hero = document.querySelector('.hero');
     heroObserver = new IntersectionObserver((entries) => {
         const heroVisible = entries[0].isIntersecting;
-        if (!heroVisible && lockedTuneId && $('sheetPanel').classList.contains('open')) {
+        if (!heroVisible && lockedTuneId) {
             startSheetContext();
         } else {
             stopSheetContext();
@@ -1004,7 +1053,7 @@ async function init() {
         if (sheetSettingIdx < sheetSettings.length - 1) { sheetSettingIdx++; renderSheet(); }
     });
 
-    $('sheetLock').addEventListener('click', toggleSheetLock);
+    $('sheetRender').addEventListener('click', toggleSheetLock);
 
     // Predictions click: load that tune's sheet music
     $('predictionsList').addEventListener('click', (e) => {
@@ -1047,6 +1096,60 @@ async function init() {
             el.classList.remove('fading');
         }, 600);
     }, 12000);
+
+    // Tune search
+    const searchInput = $('tuneSearch');
+    const searchResults = $('searchResults');
+    const searchClear = $('searchClear');
+    // Build sorted list of all tunes for search
+    const allTunes = Object.values(tuneById).map(t => ({
+        id: t.id, name: t.name, type: t.type || '',
+        nameLower: t.name.toLowerCase(),
+    })).sort((a, b) => a.name.localeCompare(b.name));
+
+    searchInput.addEventListener('input', () => {
+        const q = searchInput.value.trim().toLowerCase();
+        searchClear.classList.toggle('hidden', q.length === 0);
+        if (q.length === 0) {
+            searchResults.classList.add('hidden');
+            return;
+        }
+        const matches = allTunes.filter(t => t.nameLower.includes(q)).slice(0, 20);
+        if (matches.length === 0) {
+            searchResults.innerHTML = '<div class="search-result-row"><span class="search-result-name" style="color:#7a9470">No matches</span></div>';
+        } else {
+            searchResults.innerHTML = matches.map(t => {
+                const typeLabel = formatType(t.type);
+                const typeHtml = typeLabel ? `<span class="search-result-type">${typeLabel}</span>` : '';
+                return `<div class="search-result-row" data-tune-id="${t.id}"><span class="search-result-name">${t.name}</span>${typeHtml}</div>`;
+            }).join('');
+        }
+        searchResults.classList.remove('hidden');
+    });
+
+    searchResults.addEventListener('click', (e) => {
+        const row = e.target.closest('.search-result-row');
+        if (!row || !row.dataset.tuneId) return;
+        const tuneId = parseInt(row.dataset.tuneId, 10);
+        lockedTuneId = null;
+        loadSheetForTune(tuneId);
+        searchInput.value = '';
+        searchClear.classList.add('hidden');
+        searchResults.classList.add('hidden');
+    });
+
+    searchClear.addEventListener('click', () => {
+        searchInput.value = '';
+        searchClear.classList.add('hidden');
+        searchResults.classList.add('hidden');
+    });
+
+    // Close search results when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.search-card')) {
+            searchResults.classList.add('hidden');
+        }
+    });
 
     // History click: load that tune's sheet music
     $('historyList').addEventListener('click', (e) => {

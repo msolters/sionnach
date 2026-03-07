@@ -128,17 +128,23 @@ button:disabled { opacity: 0.4; cursor: default; }
     align-items: center; justify-content: center;
 }
 .sheet-setting-label { font-size: 11px; color: #7a9470; min-width: 80px; text-align: center; }
-.sheet-lock {
-    width: 28px; height: 28px; padding: 0; margin-right: 4px;
-    background: #2a3528; color: #7a9470; border-radius: 6px;
-    font-size: 14px; line-height: 1; display: flex;
-    align-items: center; justify-content: center;
-    cursor: pointer; border: none; transition: background 0.15s, color 0.15s;
-    position: relative; flex-shrink: 0;
+.sheet-lock-icon {
+    font-size: 13px; margin-right: 4px; flex-shrink: 0;
+    color: #7a9470; transition: color 0.15s;
 }
-.sheet-lock:hover { background: #3a4a35; }
-.sheet-lock.locked { background: #3d5a2a; color: #a8cc8c; }
-.sheet-lock.countdown { background: #5a3a2a; color: #e8a060; }
+.sheet-lock-icon.locked { color: #e8944a; }
+.sheet-lock-icon.countdown { color: #e8a060; }
+.sheet-render.locked {
+    border-color: #e8944a;
+    animation: sheetBuzz 0.3s ease;
+}
+@keyframes sheetBuzz {
+    0%, 100% { transform: translateX(0); }
+    20% { transform: translateX(-3px); }
+    40% { transform: translateX(3px); }
+    60% { transform: translateX(-2px); }
+    80% { transform: translateX(2px); }
+}
 .sheet-context {
     display: flex; align-items: center; gap: 10px;
     flex: 1; justify-content: center; min-width: 0;
@@ -161,8 +167,50 @@ button:disabled { opacity: 0.4; cursor: default; }
 .sheet-render {
     background: #142018; border-radius: 8px; padding: 16px 20px;
     overflow-x: auto; border: 1px solid #243828;
+    cursor: pointer; transition: border-color 0.3s ease;
 }
-.sheet-render svg { display: block; max-width: 100%; }
+.sheet-render svg { display: block; max-width: 100%; pointer-events: none; }
+
+/* ---- Tune search ---- */
+.search-card {
+    margin-bottom: 12px; position: relative;
+}
+.search-input-wrap {
+    position: relative; display: flex; align-items: center;
+}
+.search-input {
+    width: 100%; padding: 10px 14px; padding-right: 32px;
+    background: #1a2418; border: 1px solid #2a3528; border-radius: 10px;
+    color: #d4ddd0; font-size: 14px; outline: none;
+    transition: border-color 0.15s;
+}
+.search-input::placeholder { color: #4a6340; }
+.search-input:focus { border-color: #4c8c30; }
+.search-clear {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    color: #7a9470; font-size: 18px; cursor: pointer; line-height: 1;
+}
+.search-clear:hover { color: #d4ddd0; }
+.search-results {
+    position: absolute; left: 0; right: 0; top: 100%; z-index: 100;
+    background: #1a2418; border: 1px solid #2a3528; border-top: none;
+    border-radius: 0 0 10px 10px; max-height: 240px; overflow-y: auto;
+}
+.search-results::-webkit-scrollbar { width: 4px; }
+.search-results::-webkit-scrollbar-track { background: transparent; }
+.search-results::-webkit-scrollbar-thumb { background: #3a4a35; border-radius: 2px; }
+.search-result-row {
+    padding: 8px 14px; cursor: pointer; transition: background 0.1s;
+    border-bottom: 1px solid #222e20;
+}
+.search-result-row:last-child { border-bottom: none; }
+.search-result-row:hover { background: #223020; }
+.search-result-name {
+    font-size: 13px; font-weight: 500; color: #c8e0b0;
+}
+.search-result-type {
+    font-size: 11px; color: #c4973a; font-weight: 500; margin-left: 6px;
+}
 
 /* ---- Chromagram ---- */
 .viz-card {
@@ -381,7 +429,7 @@ canvas { display: block; border-radius: 6px; }
                 <div class="sheet-panel" id="sheetPanel">
                     <div class="sheet-panel-inner">
                         <div class="sheet-header">
-                            <button class="sheet-lock" id="sheetLock" title="Pin sheet music">&#x1F513;</button>
+                            <span class="sheet-lock-icon" id="sheetLockIcon">&#x1F513;</span>
                             <h3>Sheet Music</h3>
                             <span class="sheet-context" id="sheetContext"></span>
                             <div class="sheet-nav">
@@ -392,6 +440,15 @@ canvas { display: block; border-radius: 6px; }
                         </div>
                         <div class="sheet-render" id="sheetRender"></div>
                     </div>
+                </div>
+
+                <!-- Tune search -->
+                <div class="search-card">
+                    <div class="search-input-wrap">
+                        <input type="text" id="tuneSearch" class="search-input" placeholder="Search tunes..." autocomplete="off">
+                        <span class="search-clear hidden" id="searchClear">&times;</span>
+                    </div>
+                    <div class="search-results hidden" id="searchResults"></div>
                 </div>
 
                 <!-- Chromagram -->
