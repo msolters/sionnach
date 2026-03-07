@@ -503,12 +503,12 @@ function drawSilenceOverlay(chroma, nFrames) {
             silStart = x;
         } else if (!quiet && inSilence) {
             inSilence = false;
-            ctx.fillStyle = 'rgba(30,30,30,0.75)';
+            ctx.fillStyle = 'rgba(13,26,15,0.88)';
             ctx.fillRect(silStart, 0, x - silStart, h);
         }
     }
     if (inSilence) {
-        ctx.fillStyle = 'rgba(30,30,30,0.75)';
+        ctx.fillStyle = 'rgba(13,26,15,0.88)';
         ctx.fillRect(silStart, 0, w - silStart, h);
     }
 }
@@ -605,6 +605,7 @@ function loadSheetForTune(tuneId) {
     sheetSettingIdx = 0;
     renderSheet();
     $('sheetPanel').classList.add('open');
+    updateSheetContext();
     renderHistory();
     scheduleAutoScroll();
 }
