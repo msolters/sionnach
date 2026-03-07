@@ -112,10 +112,11 @@ async function startRecording() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-        $('statusText').textContent = 'Microphone access denied';
+        $('tapStart').textContent = 'Microphone access denied — tap to retry';
         return;
     }
 
+    try {
     audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
 
     await audioContext.audioWorklet.addModule('audio-processor.js');
@@ -164,6 +165,12 @@ async function startRecording() {
     requestAnimationFrame(updateLevel);
     timerHandle = setInterval(updateTimerAndLevel, 100);
     updateHandle = setInterval(requestAnalysis, UPDATE_INTERVAL_MS);
+    } catch (e) {
+        console.error('Failed to start recording:', e);
+        $('tapStart').textContent = 'Error: ' + e.message + ' — tap to retry';
+        $('tapStart').classList.remove('hidden');
+        $('controlsBar').classList.add('hidden');
+    }
 }
 
 function stopRecording() {
