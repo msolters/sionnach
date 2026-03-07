@@ -1196,8 +1196,7 @@ function initSplash() {
     let emojiIdx = 0;
     let animating = false;
 
-    fox.addEventListener('click', (e) => {
-        e.stopPropagation();
+    function cycleEmoji() {
         if (animating) return;
         animating = true;
         fox.classList.add('spin-out');
@@ -1213,7 +1212,9 @@ function initSplash() {
                 animating = false;
             });
         });
-    });
+    }
+
+    setInterval(cycleEmoji, 2500);
 
     btn.addEventListener('click', () => {
         $('dashboard').style.display = '';

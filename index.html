@@ -242,14 +242,8 @@ button:disabled { opacity: 0.4; cursor: default; }
     margin-bottom: 12px; position: relative; border: 1px solid #2a3528;
 }
 .viz-card h3 { font-size: 11px; color: #7a9470; margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
-.pitch-labels {
-    position: absolute; left: 12px; top: 30px;
-    display: flex; flex-direction: column; height: 96px;
-    justify-content: space-between;
-    font-size: 7px; font-family: monospace; color: #4a6340;
-}
 canvas { display: block; border-radius: 6px; }
-#chromaCanvas { height: 96px; margin-left: 18px; width: calc(100% - 18px); }
+#chromaCanvas { height: 96px; width: 100%; }
 
 /* ---- Session history (main column) ---- */
 .history-card {
@@ -349,8 +343,8 @@ canvas { display: block; border-radius: 6px; }
     transition: transform 0.8s ease, font-size 0.8s ease;
 }
 #splash .splash-fox {
-    font-size: 48px; margin: 20px 0; cursor: pointer;
-    display: inline-block; transition: transform 0.3s ease;
+    font-size: 48px; margin: 20px 0;
+    display: inline-block;
     user-select: none; -webkit-user-select: none;
 }
 #splash .splash-fox.spin-out {
@@ -406,34 +400,59 @@ canvas { display: block; border-radius: 6px; }
     .page { padding: 8px; }
     header h1 { font-size: 18px; }
     header p { font-size: 11px; }
-    .hero { padding: 10px 12px; margin-bottom: 8px; }
-    .hero-name { font-size: 16px; }
-    .hero-top { flex-direction: column; align-items: flex-start; gap: 6px; }
-    .hero-link { font-size: 12px; padding: 6px 12px; }
+
+    /* Hero card */
+    .hero { padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; }
+    .hero-name { font-size: 16px; white-space: normal; }
+    .hero-top { flex-direction: column; align-items: stretch; gap: 6px; }
+    .hero-link { font-size: 12px; padding: 6px 12px; text-align: center; }
     .hero-stats { gap: 8px; flex-wrap: wrap; }
     .hero-stat-value { font-size: 14px; }
     .hero-stat-label { font-size: 9px; }
+
+    /* Controls */
     .controls { flex-wrap: wrap; }
-    .search-input { font-size: 14px; padding: 8px 12px; }
+
+    /* Search */
+    .search-input { font-size: 16px; padding: 10px 12px; }
     .search-card { margin-bottom: 8px; }
+
+    /* Audio visualization */
     .level-meter { margin-bottom: 8px; }
-    .viz-card { padding: 8px; margin-bottom: 8px; border-radius: 8px; }
-    #chromaCanvas { height: 72px; }
-    .sheet-panel-inner { padding: 0 10px; }
-    .sheet-panel.open .sheet-panel-inner { padding: 10px; }
-    .sheet-render { padding: 8px 10px; border-radius: 6px; }
-    .sheet-header { flex-wrap: wrap; gap: 4px; }
+    .viz-card { padding: 6px; margin-bottom: 8px; border-radius: 8px; overflow: hidden; }
+    .viz-card h3 { margin-left: 4px; }
+    #chromaCanvas { height: 64px; }
+
+    /* Sheet music */
+    .sheet-panel-inner { padding: 0 8px; border-radius: 8px; }
+    .sheet-panel.open .sheet-panel-inner { padding: 8px; }
+    .sheet-render { padding: 6px 4px; border-radius: 6px; overflow-x: auto; }
+    .sheet-render-next { padding: 6px 4px; border-radius: 6px; }
+    .sheet-header { flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+    .sheet-header h3 { font-size: 10px; }
     .sheet-nav { order: 99; width: 100%; justify-content: center; margin-top: 4px; }
     .sheet-nav-btn { width: 32px; height: 32px; font-size: 20px; }
     .sheet-context { font-size: 11px; }
     .sheet-context-name { font-size: 11px; }
+
+    /* Predictions */
     .preds-card { padding: 10px 12px; border-radius: 8px; }
     .pred-row { padding: 6px 8px; }
     .pred-name { font-size: 13px; }
+
+    /* History */
     .history-card { padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; }
+
+    /* Loading */
+    #loadProgress { width: 80%; max-width: 200px; }
+
+    /* Splash */
     #splash .splash-title { font-size: 36px; }
     #splash .splash-fox { font-size: 40px; }
     #splash .splash-btn { font-size: 16px; padding: 10px 28px; }
+
+    /* Layout gap */
+    .layout { gap: 8px; }
 }
 </style>
 </head>
@@ -475,11 +494,6 @@ canvas { display: block; border-radius: 6px; }
         <!-- Chromagram -->
         <div class="viz-card">
             <h3>Live Chromagram</h3>
-            <div class="pitch-labels">
-                <span>B</span><span>A#</span><span>A</span><span>G#</span>
-                <span>G</span><span>F#</span><span>F</span><span>E</span>
-                <span>D#</span><span>D</span><span>C#</span><span>C</span>
-            </div>
             <canvas id="chromaCanvas" width="800" height="96"></canvas>
         </div>
 
