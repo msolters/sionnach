@@ -1175,7 +1175,25 @@ function initSplash() {
     const splash = $('splash');
     const btn = $('splashStart');
     const fox = document.querySelector('.splash-fox');
-    let isFox = true;
+    const emojiCycle = [
+        '\uD83E\uDD8A', // fox
+        '\uD83D\uDC37', // pig
+        '\u2699\uFE0F', // gear
+        '\uD83C\uDFBB', // violin
+        '\uD83C\uDFB8', // guitar
+        '\uD83C\uDFBA', // trumpet
+        '\uD83C\uDFB7', // saxophone
+        '\uD83E\uDE97', // accordion
+        '\uD83E\uDD41', // drum
+        '\uD83C\uDFB6', // notes
+        '\uD83C\uDFB5', // note
+        '\uD83C\uDFBC', // score
+        '\uD83C\uDFB9', // piano
+        '\uD83E\uDE87', // maracas
+        '\uD83E\uDE98', // long drum
+        '\uD83C\uDFA4', // microphone
+    ];
+    let emojiIdx = 0;
     let animating = false;
 
     fox.addEventListener('click', (e) => {
@@ -1186,8 +1204,8 @@ function initSplash() {
         fox.addEventListener('animationend', function onOut() {
             fox.removeEventListener('animationend', onOut);
             fox.classList.remove('spin-out');
-            fox.textContent = isFox ? '\uD83D\uDC37' : '\uD83E\uDD8A';
-            isFox = !isFox;
+            emojiIdx = (emojiIdx + 1) % emojiCycle.length;
+            fox.textContent = emojiCycle[emojiIdx];
             fox.classList.add('spin-in');
             fox.addEventListener('animationend', function onIn() {
                 fox.removeEventListener('animationend', onIn);
