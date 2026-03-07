@@ -489,7 +489,7 @@ function drawWindowOverlay(nFrames) {
         ctx.beginPath();
         ctx.rect(x0 + 2, h - bandH, rw - 4, bandH);
         ctx.clip();
-        ctx.fillStyle = '#c8e0b0';
+        ctx.fillStyle = '#f0f4ec';
         ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
         ctx.textBaseline = 'middle';
         ctx.fillText(region.name, x0 + 4, h - bandH / 2);
@@ -567,7 +567,7 @@ function drawSilenceOverlay(rawEnergy, nFrames) {
             ctx.beginPath();
             ctx.rect(x0 + 2, h - bandH, rw - 4, bandH);
             ctx.clip();
-            ctx.fillStyle = '#4a6340';
+            ctx.fillStyle = '#c0c8b8';
             ctx.font = '10px -apple-system, BlinkMacSystemFont, sans-serif';
             ctx.textBaseline = 'middle';
             ctx.fillText('Noise', x0 + 4, h - bandH / 2);
