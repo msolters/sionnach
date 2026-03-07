@@ -431,6 +431,21 @@ self.onmessage = function(e) {
         self.postMessage({ type: 'ready' });
     }
 
+    if (type === 'chroma-only') {
+        const samples = new Float32Array(data.samples);
+        const stft = computeSTFT(samples);
+        if (!stft) {
+            self.postMessage({ type: 'chroma-only', data: null });
+            return;
+        }
+        const { mag, nFrames, nBins } = stft;
+        const stdResult = processStandard(mag, nFrames, nBins);
+        self.postMessage({
+            type: 'chroma-only',
+            data: { chroma: stdResult.chroma, rawEnergy: stdResult.rawEnergy, nFrames }
+        }, [stdResult.chroma.buffer, stdResult.rawEnergy.buffer]);
+    }
+
     if (type === 'process') {
         const samples = new Float32Array(data.samples);
 

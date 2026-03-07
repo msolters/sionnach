@@ -10,6 +10,7 @@ const HOP_FRAMES = 172;
 const MAX_AUDIO_SEC = 15;
 const MIN_AUDIO_SEC = 4;      // start predicting early with zero-padded windows
 const UPDATE_INTERVAL_MS = 1000;
+const CHROMA_INTERVAL_MS = 200;  // fast chromagram refresh (~5 fps)
 const COMPACT_THRESHOLD = 500;
 const SESSION_URL = 'https://thesession.org/tunes';
 
@@ -44,6 +45,8 @@ let startTime = 0;
 let timerHandle = null;
 let updateHandle = null;
 let workerBusy = false;
+let chromaBusy = false;
+let chromaHandle = null;
 let inputLevel = 0;
 let currentTempo = null;
 let sessionHistory = [];
@@ -182,6 +185,7 @@ async function startRecording() {
     requestAnimationFrame(updateLevel);
     timerHandle = setInterval(updateTimerAndLevel, 100);
     updateHandle = setInterval(requestAnalysis, UPDATE_INTERVAL_MS);
+    chromaHandle = setInterval(requestChromaOnly, CHROMA_INTERVAL_MS);
     } catch (e) {
         console.error('Failed to start recording:', e);
         $('topTuneName').textContent = 'Error — tap to retry';
@@ -195,6 +199,7 @@ function stopRecording() {
     isRecording = false;
     clearInterval(timerHandle);
     clearInterval(updateHandle);
+    clearInterval(chromaHandle);
 
     if (workletNode) { workletNode.disconnect(); workletNode = null; }
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
@@ -230,6 +235,18 @@ function updateTimerAndLevel() {
 }
 
 // ---- Analysis pipeline (Worker + ONNX) ----
+
+function requestChromaOnly() {
+    if (chromaBusy || workerBusy) return;
+    const minSamples = MIN_AUDIO_SEC * SAMPLE_RATE;
+    if (totalSamples < minSamples) return;
+    chromaBusy = true;
+    const buffer = getAudioBuffer();
+    dspWorker.postMessage(
+        { type: 'chroma-only', data: { samples: buffer } },
+        [buffer.buffer]
+    );
+}
 
 function requestAnalysis() {
     if (workerBusy) return;
@@ -1190,6 +1207,18 @@ async function init() {
     dspWorker = new Worker('worker.js');
     dspWorker.onmessage = (e) => {
         if (e.data.type === 'ready') console.log('DSP worker ready');
+        if (e.data.type === 'chroma-only') {
+            chromaBusy = false;
+            if (e.data.data) {
+                const { chroma, rawEnergy, nFrames } = e.data.data;
+                lastChroma = chroma;
+                lastChromaNFrames = nFrames;
+                lastNFrames = nFrames;
+                drawChromagram(chroma, rawEnergy, nFrames);
+                drawSilenceOverlay(rawEnergy, nFrames);
+                if (windowRegions.length > 0) drawWindowOverlay(nFrames);
+            }
+        }
         if (e.data.type === 'result') handleWorkerResult(e.data.data);
     };
     const fbCopy = new Float32Array(chromaFB);
