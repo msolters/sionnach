@@ -158,19 +158,14 @@ button:disabled { opacity: 0.4; cursor: default; }
     background: #142018; border-radius: 8px; padding: 16px 20px;
     overflow: hidden;
     cursor: default;
-    transition: opacity 0.4s ease, transform 0.4s ease;
 }
 .sheet-render-next.entering {
+    transition: opacity 0.35s ease, transform 0.35s ease;
     opacity: 1; transform: scale(1);
 }
 .sheet-render.exiting svg {
-    transition: opacity 0.4s ease;
+    transition: opacity 0.35s ease;
     opacity: 0;
-}
-.sheet-render.exiting {
-    transition: border-color 0.4s ease, border-width 0.4s ease;
-    border-color: #cc2020 !important;
-    border-width: 3px !important;
 }
 .sheet-render-next svg { display: block; max-width: 100%; pointer-events: none; }
 .sheet-context {

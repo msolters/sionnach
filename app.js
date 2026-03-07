@@ -968,6 +968,17 @@ function renderSheetInto(elementId, tuneId) {
     });
 }
 
+// Interpolate border from orange to red based on countdown progress
+function updateCountdownBorder() {
+    const render = $('sheetRender');
+    const progress = 1 - (unlockCountdown / LOCK_COUNTDOWN); // 0 at start -> 1 at end
+    // Orange (#e8944a) -> Red (#cc2020)
+    const r = Math.round(232 + (204 - 232) * progress);
+    const g = Math.round(148 * (1 - progress) + 32 * progress);
+    const b = Math.round(74 * (1 - progress) + 32 * progress);
+    render.style.borderColor = `rgb(${r},${g},${b})`;
+}
+
 // Trigger the smooth crossfade transition
 function startSheetTransition() {
     $('sheetRender').classList.add('exiting');
@@ -977,6 +988,7 @@ function startSheetTransition() {
 // Reset transition visuals
 function resetTransitionVisuals() {
     $('sheetRender').classList.remove('exiting');
+    $('sheetRender').style.borderColor = '';
     $('sheetRenderNext').classList.remove('entering');
     $('sheetRenderNext').innerHTML = '';
 }
@@ -993,16 +1005,17 @@ function startUnlockCountdown() {
     }
 
     updateLockUI();
+    updateCountdownBorder();
     unlockInterval = setInterval(() => {
         unlockCountdown--;
         if (unlockCountdown <= 0) {
             clearInterval(unlockInterval);
             unlockInterval = null;
             startSheetTransition();
-            // Wait for transition to finish, then unlock
             setTimeout(() => unlockSheet(), 400);
         } else {
             updateLockUI();
+            updateCountdownBorder();
         }
     }, 1000);
 }
