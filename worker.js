@@ -169,8 +169,10 @@ function specToChroma(spec, nFrames, nBins, fb) {
 function processStandard(mag, nFrames, nBins) {
     const chroma = specToChroma(mag, nFrames, nBins);
     const filtered = medianFilter(chroma, nFrames);
+    // Keep a copy before peak normalization for noise detection
+    const rawEnergy = new Float32Array(filtered);
     peakNormalize(filtered, nFrames);
-    return filtered;
+    return { chroma: filtered, rawEnergy };
 }
 
 // ---- Drone / accompaniment removal ----
@@ -442,8 +444,8 @@ self.onmessage = function(e) {
         const { mag, nFrames, nBins } = stft;
 
         // Standard chromagram path
-        const chromaStd = processStandard(mag, nFrames, nBins);
-        const tensorsStd = prepareModelInputs(chromaStd, nFrames);
+        const stdResult = processStandard(mag, nFrames, nBins);
+        const tensorsStd = prepareModelInputs(stdResult.chroma, nFrames);
 
         // Foreground (harmonic-only) chromagram path
         const chromaFg = processForeground(mag, nFrames, nBins);
@@ -452,14 +454,16 @@ self.onmessage = function(e) {
         const tempo = estimateTempo(samples);
 
         const transferables = [
-            chromaStd.buffer,
+            stdResult.chroma.buffer,
+            stdResult.rawEnergy.buffer,
             ...tensorsStd.map(t => t.buffer),
             ...tensorsFg.map(t => t.buffer),
         ];
         self.postMessage({
             type: 'result',
             data: {
-                chroma: chromaStd,
+                chroma: stdResult.chroma,
+                rawEnergy: stdResult.rawEnergy,
                 nFrames: nFrames,
                 tensors: tensorsStd,
                 tensorsFg: tensorsFg,

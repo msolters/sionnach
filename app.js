@@ -242,7 +242,7 @@ async function handleWorkerResult(data) {
     workerBusy = false;
     if (!data) return;
 
-    const { chroma, nFrames, tensors, tensorsFg, tempo } = data;
+    const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
 
     // Detect silence: check if current input level is below noise floor
     const isQuiet = inputLevel < SILENCE_THRESHOLD;
@@ -277,7 +277,7 @@ async function handleWorkerResult(data) {
 
     lastNFrames = nFrames;
     drawChromagram(chroma, nFrames);
-    drawSilenceOverlay(chroma, nFrames);
+    drawSilenceOverlay(rawEnergy, nFrames);
 
     if (tensors.length === 0) return;
 
@@ -486,12 +486,14 @@ function drawWindowOverlay(nFrames) {
     }
 }
 
-// Spectral flatness of a chroma frame: geometric mean / arithmetic mean
+// Spectral flatness on RAW (pre-normalized) chroma energy.
+// After peak normalization, noise looks peaky due to bin squashing,
+// so we must use the raw values where noise is genuinely flat.
 // 1.0 = perfectly flat (noise), 0.0 = one dominant pitch (melodic)
-function chromaFlatness(chroma, nFrames, f) {
+function chromaFlatness(rawEnergy, nFrames, f) {
     let logSum = 0, sum = 0;
     for (let c = 0; c < N_CHROMA; c++) {
-        const v = Math.max(chroma[c * nFrames + f], 1e-10);
+        const v = Math.max(rawEnergy[c * nFrames + f], 1e-10);
         logSum += Math.log(v);
         sum += v;
     }
@@ -500,7 +502,7 @@ function chromaFlatness(chroma, nFrames, f) {
     return ariMean > 1e-10 ? geoMean / ariMean : 1.0;
 }
 
-function drawSilenceOverlay(chroma, nFrames) {
+function drawSilenceOverlay(rawEnergy, nFrames) {
     const canvas = $('chromaCanvas');
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
@@ -518,11 +520,8 @@ function drawSilenceOverlay(chroma, nFrames) {
         if (f >= nFrames) {
             isNoise = true;
         } else {
-            // Check both: low total energy OR flat chroma distribution
-            let energy = 0;
-            for (let c = 0; c < N_CHROMA; c++) energy += chroma[c * nFrames + f];
-            const flatness = chromaFlatness(chroma, nFrames, f);
-            isNoise = energy < 0.05 || flatness > FLATNESS_THRESH;
+            const flatness = chromaFlatness(rawEnergy, nFrames, f);
+            isNoise = flatness > FLATNESS_THRESH;
         }
 
         if (isNoise && !inNoise) {
