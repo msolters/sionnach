@@ -14,7 +14,15 @@ const MEDIAN_WIDTH = 9;
 const PEAK_THRESHOLD = 0.15;
 const HPSS_KERNEL = 31;  // median filter kernel for HPSS (must be odd)
 
+// Melody frequency range for Irish trad instruments (whistle, flute, fiddle, concertina)
+// Below ~250Hz is guitar/bouzouki/accordion bass; above ~3500Hz is mostly noise
+const MELODY_FREQ_LO = 250;
+const MELODY_FREQ_HI = 3500;
+// Sliding window for drone removal (catches chord changes, not just constant drones)
+const DRONE_WINDOW = 172;  // ~4 seconds at 43 frames/sec
+
 let chromaFB = null;
+let chromaFB_melody = null;  // frequency-restricted filter bank for foreground
 let hannWindow = null;
 
 // ---- FFT (radix-2 Cooley-Tukey) ----
@@ -140,14 +148,15 @@ function hpss(mag, nFrames, nBins) {
 
 // ---- Spectrogram -> Chromagram ----
 
-function specToChroma(spec, nFrames, nBins) {
+function specToChroma(spec, nFrames, nBins, fb) {
+    fb = fb || chromaFB;
     const chroma = new Float32Array(N_CHROMA * nFrames);
     for (let f = 0; f < nFrames; f++) {
         for (let c = 0; c < N_CHROMA; c++) {
             let sum = 0;
             const cBase = c * nBins;
             for (let b = 0; b < nBins; b++) {
-                sum += chromaFB[cBase + b] * spec[b * nFrames + f];
+                sum += fb[cBase + b] * spec[b * nFrames + f];
             }
             chroma[c * nFrames + f] = sum;
         }
@@ -164,25 +173,27 @@ function processStandard(mag, nFrames, nBins) {
     return filtered;
 }
 
-// ---- Drone removal ----
-// Sustained accompaniment (accordion bass, bouzouki drones, guitar pads)
-// creates constant energy in certain chroma bins that confuse the classifier.
-// Per-bin temporal median subtraction removes anything persistently present,
-// leaving only transient melodic content that changes over time.
+// ---- Drone / accompaniment removal ----
+// Sliding-window per-bin median subtraction.
+// A short window (~4s) catches chord changes and strummed patterns,
+// not just constant drones. For each chroma bin at each frame,
+// subtract the local median — whatever is persistently present nearby
+// in time gets removed, leaving transient melodic content.
 
 function removeDrone(chroma, nFrames) {
     const out = new Float32Array(chroma.length);
-    const buf = new Float32Array(nFrames);
+    const half = DRONE_WINDOW >> 1;
 
     for (let c = 0; c < N_CHROMA; c++) {
         const row = c * nFrames;
-        // Collect all values for this chroma bin across time
-        for (let f = 0; f < nFrames; f++) buf[f] = chroma[row + f];
-        // Sort a copy to find median
-        const sorted = buf.slice().sort();
-        const median = sorted[nFrames >> 1];
-        // Subtract median and rectify — removes the sustained component
         for (let f = 0; f < nFrames; f++) {
+            const start = Math.max(0, f - half);
+            const end = Math.min(nFrames - 1, f + half);
+            const count = end - start + 1;
+            const buf = new Float32Array(count);
+            for (let j = 0; j < count; j++) buf[j] = chroma[row + start + j];
+            buf.sort();
+            const median = buf[count >> 1];
             out[row + f] = Math.max(0, chroma[row + f] - median);
         }
     }
@@ -190,12 +201,15 @@ function removeDrone(chroma, nFrames) {
 }
 
 // ---- Foreground (melody) chromagram pipeline ----
-// HPSS removes percussion, drone removal removes sustained accompaniment,
-// leaving primarily the melodic foreground.
+// 1. HPSS removes percussion (bodhrán, guitar strums, foot tapping)
+// 2. Melody-range filter bank excludes bass frequencies (<250Hz)
+//    where guitar/bouzouki/accordion bass accompaniment lives
+// 3. Sliding-window drone removal catches chord changes and pads
+// Result: primarily the melodic line from whistle/flute/fiddle/concertina
 
 function processForeground(mag, nFrames, nBins) {
     const harmonicSpec = hpss(mag, nFrames, nBins);
-    const chroma = specToChroma(harmonicSpec, nFrames, nBins);
+    const chroma = specToChroma(harmonicSpec, nFrames, nBins, chromaFB_melody);
     const deDroned = removeDrone(chroma, nFrames);
     const filtered = medianFilter(deDroned, nFrames);
     peakNormalize(filtered, nFrames);
@@ -400,6 +414,18 @@ self.onmessage = function(e) {
         hannWindow = new Float32Array(N_FFT);
         for (let i = 0; i < N_FFT; i++)
             hannWindow[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / N_FFT));
+
+        // Build melody-range filter bank: zero out bins outside melody frequencies
+        const nBins = chromaFB.length / N_CHROMA;
+        const minBin = Math.round(MELODY_FREQ_LO * N_FFT / SAMPLE_RATE);
+        const maxBin = Math.round(MELODY_FREQ_HI * N_FFT / SAMPLE_RATE);
+        chromaFB_melody = new Float32Array(chromaFB.length);
+        for (let c = 0; c < N_CHROMA; c++) {
+            for (let b = minBin; b <= maxBin && b < nBins; b++) {
+                chromaFB_melody[c * nBins + b] = chromaFB[c * nBins + b];
+            }
+        }
+
         self.postMessage({ type: 'ready' });
     }
 
