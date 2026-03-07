@@ -276,7 +276,7 @@ async function handleWorkerResult(data) {
     }
 
     lastNFrames = nFrames;
-    drawChromagram(chroma, nFrames);
+    drawChromagram(chroma, rawEnergy, nFrames);
     drawSilenceOverlay(rawEnergy, nFrames);
 
     if (tensors.length === 0) return;
@@ -397,16 +397,34 @@ function colorMap(v) {
     ];
 }
 
-function drawChromagram(chroma, nFrames) {
+function drawChromagram(chroma, rawEnergy, nFrames) {
     const canvas = $('chromaCanvas');
     const ctx = canvas.getContext('2d');
     const w = canvas.width, h = canvas.height;
     const img = ctx.createImageData(w, h);
     const rowH = h / N_CHROMA;
 
+    // Compute per-frame max raw energy for brightness scaling.
+    // Quiet frames get dimmed so room noise doesn't look like signal.
+    const frameMax = new Float32Array(nFrames);
+    let globalMax = 0;
+    for (let f = 0; f < nFrames; f++) {
+        let mx = 0;
+        for (let c = 0; c < N_CHROMA; c++) {
+            const v = rawEnergy[c * nFrames + f];
+            if (v > mx) mx = v;
+        }
+        frameMax[f] = mx;
+        if (mx > globalMax) globalMax = mx;
+    }
+
     for (let x = 0; x < w; x++) {
         const f = Math.floor((x / w) * nFrames);
         if (f >= nFrames) continue;
+        // Brightness: log-scale ratio of frame energy to global max
+        // so quiet frames are dark and loud frames are bright
+        const rawRatio = globalMax > 0 ? frameMax[f] / globalMax : 0;
+        const brightness = Math.max(0, Math.min(1, Math.pow(rawRatio, 0.4)));
         for (let c = 0; c < N_CHROMA; c++) {
             const row = N_CHROMA - 1 - c;
             const [r, g, b] = colorMap(chroma[c * nFrames + f]);
@@ -414,8 +432,10 @@ function drawChromagram(chroma, nFrames) {
             const y1 = Math.floor((row + 1) * rowH);
             for (let y = y0; y < y1 && y < h; y++) {
                 const idx = (y * w + x) * 4;
-                img.data[idx] = r; img.data[idx+1] = g;
-                img.data[idx+2] = b; img.data[idx+3] = 255;
+                img.data[idx] = Math.round(r * brightness);
+                img.data[idx+1] = Math.round(g * brightness);
+                img.data[idx+2] = Math.round(b * brightness);
+                img.data[idx+3] = 255;
             }
         }
     }
