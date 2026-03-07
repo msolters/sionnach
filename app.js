@@ -712,6 +712,8 @@ function updateLockOn(top) {
     } else {
         sheetFetchId = top.id;
         lockCount = 1;
+        // New tune detected — show "Coming up" immediately
+        if (lockedTuneId) showComingUpForTune(top.id);
     }
 
     if (lockCount >= LOCK_THRESHOLD) {
@@ -979,15 +981,13 @@ function updateCountdownBorder() {
     render.style.borderColor = `rgb(${r},${g},${b})`;
 }
 
-// Show "Coming up" context for the rival tune
-function showComingUpContext() {
-    if (!rivalTuneId) return;
-    const entry = tuneById[rivalTuneId];
+// Show "Coming up" context for a given tune
+function showComingUpForTune(tuneId) {
+    const entry = tuneById[tuneId];
     if (!entry) return;
     const el = $('sheetContext');
     const typeInfo = TYPE_INFO[entry.type];
     const typeLabel = typeInfo ? `<span class="ctx-type">${typeInfo.label}</span>` : '';
-    // Fade out, swap, fade in
     el.classList.remove('visible');
     setTimeout(() => {
         el.innerHTML = `<span class="sheet-context-name">Coming up: ${entry.name}</span>` +
@@ -1024,7 +1024,7 @@ function startUnlockCountdown() {
 
     updateLockUI();
     updateCountdownBorder();
-    showComingUpContext();
+    if (rivalTuneId) showComingUpForTune(rivalTuneId);
     unlockInterval = setInterval(() => {
         unlockCountdown--;
         if (unlockCountdown <= 0) {
