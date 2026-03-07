@@ -387,12 +387,13 @@ function renderResults(predictions) {
     // Predictions list (#2-#10)
     const list = $('predictionsList');
     const maxProb = top.prob;
-    list.innerHTML = predictions.slice(1).map(p => {
+    list.innerHTML = predictions.map(p => {
         const pct = (p.prob * 100).toFixed(1);
         const barW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
         const typeLabel = formatType(p.type);
         const typeHtml = typeLabel ? `<span class="pred-type">${typeLabel}</span>` : '';
-        return `<div class="pred-row" data-tune-id="${p.id}" data-tune-name="${p.name}">
+        const topClass = p.rank === 1 ? ' pred-top' : '';
+        return `<div class="pred-row${topClass}" data-tune-id="${p.id}" data-tune-name="${p.name}">
             <div class="pred-bar" style="width:${barW}%"></div>
             <span class="pred-rank">${p.rank}</span>
             <div class="pred-info">
