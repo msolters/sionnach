@@ -164,12 +164,40 @@ function processStandard(mag, nFrames, nBins) {
     return filtered;
 }
 
-// ---- Harmonic (foreground) chromagram pipeline ----
+// ---- Drone removal ----
+// Sustained accompaniment (accordion bass, bouzouki drones, guitar pads)
+// creates constant energy in certain chroma bins that confuse the classifier.
+// Per-bin temporal median subtraction removes anything persistently present,
+// leaving only transient melodic content that changes over time.
+
+function removeDrone(chroma, nFrames) {
+    const out = new Float32Array(chroma.length);
+    const buf = new Float32Array(nFrames);
+
+    for (let c = 0; c < N_CHROMA; c++) {
+        const row = c * nFrames;
+        // Collect all values for this chroma bin across time
+        for (let f = 0; f < nFrames; f++) buf[f] = chroma[row + f];
+        // Sort a copy to find median
+        const sorted = buf.slice().sort();
+        const median = sorted[nFrames >> 1];
+        // Subtract median and rectify — removes the sustained component
+        for (let f = 0; f < nFrames; f++) {
+            out[row + f] = Math.max(0, chroma[row + f] - median);
+        }
+    }
+    return out;
+}
+
+// ---- Foreground (melody) chromagram pipeline ----
+// HPSS removes percussion, drone removal removes sustained accompaniment,
+// leaving primarily the melodic foreground.
 
 function processForeground(mag, nFrames, nBins) {
     const harmonicSpec = hpss(mag, nFrames, nBins);
     const chroma = specToChroma(harmonicSpec, nFrames, nBins);
-    const filtered = medianFilter(chroma, nFrames);
+    const deDroned = removeDrone(chroma, nFrames);
+    const filtered = medianFilter(deDroned, nFrames);
     peakNormalize(filtered, nFrames);
     return filtered;
 }
