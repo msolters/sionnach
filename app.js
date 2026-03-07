@@ -57,6 +57,8 @@ let musicActive = false;   // true when signal is above noise floor
 let silenceCount = 0;      // consecutive quiet analysis cycles
 const SILENCE_THRESHOLD = 0.005;  // RMS below this = silence/noise
 const SILENCE_CYCLES = 2;  // cycles of quiet before declaring "stopped"
+let autoScrollTimer = null;  // delayed auto-scroll after lock-on
+const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 
 const $ = id => document.getElementById(id);
 
@@ -149,8 +151,8 @@ async function startRecording() {
     silenceCount = 0;
     lockCount = 0;
     sheetFetchId = null;
-    $('startBtn').disabled = true;
-    $('stopBtn').disabled = false;
+    $('tapStart').classList.add('hidden');
+    $('controlsBar').classList.remove('hidden');
     $('topTuneName').textContent = 'Listening...';
     $('topTuneType').textContent = '';
     $('topTuneConf').textContent = '';
@@ -173,9 +175,9 @@ function stopRecording() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
 
-    $('startBtn').disabled = false;
-    $('stopBtn').disabled = true;
     $('statusText').textContent = 'Stopped';
+    $('tapStart').classList.remove('hidden');
+    $('controlsBar').classList.add('hidden');
     document.body.classList.remove('recording');
 
     requestAnalysis();
@@ -383,16 +385,12 @@ function renderResults(predictions) {
         const barW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
         const typeLabel = formatType(p.type);
         const typeHtml = typeLabel ? `<span class="pred-type">${typeLabel}</span>` : '';
-        const link = p.id
-            ? `<a class="sm-link" href="${SESSION_URL}/${p.id}" target="_blank">Sheet Music</a>`
-            : '';
-        return `<div class="pred-row">
+        return `<div class="pred-row" data-tune-id="${p.id}" data-tune-name="${p.name}">
+            <div class="pred-bar" style="width:${barW}%"></div>
             <span class="pred-rank">${p.rank}</span>
             <div class="pred-info">
                 <span class="pred-name">${p.name} ${typeHtml}</span>
-                <div class="pred-bar-bg"><div class="pred-bar" style="width:${barW}%"></div></div>
             </div>
-            ${link}
             <span class="pred-pct">${pct}%</span>
         </div>`;
     }).join('');
@@ -439,6 +437,7 @@ function loadSheetForTune(tuneId) {
     renderSheet();
     $('sheetPanel').classList.add('open');
     renderHistory();
+    scheduleAutoScroll();
 }
 
 // Map key strings from The Session archive to ABC K: field
@@ -491,6 +490,21 @@ function hideSheet() {
     sheetSettingIdx = 0;
     sheetFetchId = null;
     lockCount = 0;
+    if (autoScrollTimer) { clearTimeout(autoScrollTimer); autoScrollTimer = null; }
+}
+
+// ---- Auto-scroll to sheet music ----
+
+function scheduleAutoScroll() {
+    if (autoScrollTimer) clearTimeout(autoScrollTimer);
+    autoScrollTimer = setTimeout(() => {
+        autoScrollTimer = null;
+        // Only scroll if user is still near the top of the page
+        if (window.scrollY > 150) return;
+        const panel = $('sheetPanel');
+        if (!panel.classList.contains('open')) return;
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, AUTO_SCROLL_DELAY);
 }
 
 // ---- Session History ----
@@ -606,14 +620,55 @@ async function init() {
     $('loading').classList.add('hidden');
     $('mainUI').classList.remove('hidden');
 
-    $('startBtn').addEventListener('click', startRecording);
-    $('stopBtn').addEventListener('click', stopRecording);
+    $('tapStart').addEventListener('click', startRecording);
     $('prevSetting').addEventListener('click', () => {
         if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); }
     });
     $('nextSetting').addEventListener('click', () => {
         if (sheetSettingIdx < sheetSettings.length - 1) { sheetSettingIdx++; renderSheet(); }
     });
+
+    // Predictions click: load that tune's sheet music
+    $('predictionsList').addEventListener('click', (e) => {
+        const row = e.target.closest('.pred-row');
+        if (!row) return;
+        const tuneId = parseInt(row.dataset.tuneId, 10);
+        if (!tuneId) return;
+        lockedTuneId = null;
+        loadSheetForTune(tuneId);
+        $('topTuneName').textContent = row.dataset.tuneName;
+        renderHistory();
+    });
+
+    // Rotating taglines
+    const taglines = [
+        'Irish Tune Identifier',
+        'What the hell is going on?',
+        'Chaos is a Ladder',
+        'Who is playing that bodhr\u00e1n?',
+        'Thinking',
+        'Vibing',
+        '\uD83E\uDD8A',
+        'Is this a reel or a jig?',
+        'Ah sure look it',
+        'One more tune and then we\u2019ll go',
+        'Grand so',
+        'Not Drowsy Maggie again',
+        'Will ye whisht',
+        'The session starts at 9 (it\u2019s 11)',
+        'Pint of plain please',
+        'Who started that?',
+    ];
+    let tagIdx = 0;
+    setInterval(() => {
+        const el = $('tagline');
+        el.classList.add('fading');
+        setTimeout(() => {
+            tagIdx = (tagIdx + 1) % taglines.length;
+            el.textContent = taglines[tagIdx];
+            el.classList.remove('fading');
+        }, 600);
+    }, 12000);
 
     // History click: load that tune's sheet music
     $('historyList').addEventListener('click', (e) => {
