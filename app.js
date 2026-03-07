@@ -236,7 +236,7 @@ async function handleWorkerResult(data) {
     workerBusy = false;
     if (!data) return;
 
-    const { chroma, nFrames, tensors, tempo } = data;
+    const { chroma, nFrames, tensors, tensorsFg, tempo } = data;
 
     // Detect silence: check if current input level is below noise floor
     const isQuiet = inputLevel < SILENCE_THRESHOLD;
@@ -285,42 +285,73 @@ async function handleWorkerResult(data) {
         for (let s = 0; s <= nFrames - WINDOW_FRAMES; s += HOP_FRAMES) winStarts.push(s);
     }
 
-    // Run ONNX inference
-    const allProbs = [];
+    // Run ONNX inference on both standard and foreground tensors
+    const WEIGHT_STD = 0.6;
+    const WEIGHT_FG = 0.4;
+
+    // Helper: run inference on a set of tensors, return per-window probs
+    async function inferWindows(windowTensors) {
+        const allProbs = [];
+        for (const tensorData of windowTensors) {
+            const input = new ort.Tensor('float32', tensorData, [1, 2, N_CHROMA, WINDOW_FRAMES]);
+            const output = await onnxSession.run({ input });
+            const logits = output.output.data;
+            let maxL = -Infinity;
+            for (let i = 0; i < logits.length; i++) if (logits[i] > maxL) maxL = logits[i];
+            const probs = new Float32Array(logits.length);
+            let sum = 0;
+            for (let i = 0; i < logits.length; i++) { probs[i] = Math.exp(logits[i] - maxL); sum += probs[i]; }
+            for (let i = 0; i < probs.length; i++) probs[i] /= sum;
+            allProbs.push(probs);
+        }
+        return allProbs;
+    }
+
+    const probsStd = await inferWindows(tensors);
+    const probsFg = tensorsFg && tensorsFg.length > 0 ? await inferWindows(tensorsFg) : [];
+
+    // Build per-window regions from ensemble for chromagram overlay
+    const nClasses = probsStd[0].length;
     const regions = [];
-    for (let w = 0; w < tensors.length; w++) {
-        const tensorData = tensors[w];
-        const input = new ort.Tensor('float32', tensorData, [1, 2, N_CHROMA, WINDOW_FRAMES]);
-        const output = await onnxSession.run({ input });
-        const logits = output.output.data;
+    for (let w = 0; w < probsStd.length; w++) {
+        // Ensemble this window's probs
+        const combined = new Float32Array(nClasses);
+        for (let i = 0; i < nClasses; i++) combined[i] = probsStd[w][i] * WEIGHT_STD;
+        if (w < probsFg.length) {
+            for (let i = 0; i < nClasses; i++) combined[i] += probsFg[w][i] * WEIGHT_FG;
+        } else {
+            for (let i = 0; i < nClasses; i++) combined[i] += probsStd[w][i] * WEIGHT_FG;
+        }
 
-        let maxL = -Infinity;
-        for (let i = 0; i < logits.length; i++) if (logits[i] > maxL) maxL = logits[i];
-        const probs = new Float32Array(logits.length);
-        let sum = 0;
-        for (let i = 0; i < logits.length; i++) { probs[i] = Math.exp(logits[i] - maxL); sum += probs[i]; }
-        for (let i = 0; i < probs.length; i++) probs[i] /= sum;
-        allProbs.push(probs);
-
-        // Find top prediction for this window
         let topIdx = 0;
-        for (let i = 1; i < probs.length; i++) if (probs[i] > probs[topIdx]) topIdx = i;
+        for (let i = 1; i < nClasses; i++) if (combined[i] > combined[topIdx]) topIdx = i;
         const startFrame = winStarts[w] || 0;
         const endFrame = Math.min(startFrame + WINDOW_FRAMES, nFrames);
         regions.push({
             startFrame, endFrame,
             id: tuneIndex[topIdx]?.id,
             name: tuneIndex[topIdx]?.name || '?',
-            prob: probs[topIdx],
+            prob: combined[topIdx],
         });
     }
     windowRegions = regions;
     drawWindowOverlay(nFrames);
 
-    const nClasses = allProbs[0].length;
+    // Ensemble average across all windows
     const avg = new Float32Array(nClasses);
-    for (const p of allProbs) for (let i = 0; i < nClasses; i++) avg[i] += p[i];
-    for (let i = 0; i < nClasses; i++) avg[i] /= allProbs.length;
+    // Normalize per-approach then combine
+    const avgStd = new Float32Array(nClasses);
+    for (const p of probsStd) for (let i = 0; i < nClasses; i++) avgStd[i] += p[i];
+    for (let i = 0; i < nClasses; i++) avgStd[i] /= probsStd.length;
+
+    if (probsFg.length > 0) {
+        const avgFg = new Float32Array(nClasses);
+        for (const p of probsFg) for (let i = 0; i < nClasses; i++) avgFg[i] += p[i];
+        for (let i = 0; i < nClasses; i++) avgFg[i] /= probsFg.length;
+        for (let i = 0; i < nClasses; i++) avg[i] = avgStd[i] * WEIGHT_STD + avgFg[i] * WEIGHT_FG;
+    } else {
+        for (let i = 0; i < nClasses; i++) avg[i] = avgStd[i];
+    }
 
     const indices = Array.from({ length: nClasses }, (_, i) => i);
     indices.sort((a, b) => avg[b] - avg[a]);

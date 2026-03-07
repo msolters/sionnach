@@ -1,5 +1,7 @@
-// Web Worker: DSP processing (FFT, STFT, chromagram extraction)
+// Web Worker: DSP processing (FFT, STFT, chromagram, HPSS extraction)
 // Runs off the main thread so the UI stays responsive.
+// Produces two chromagram paths: standard and harmonic-foreground,
+// mirroring the ensemble approach used during training.
 
 const SAMPLE_RATE = 22050;
 const N_FFT = 2048;
@@ -10,6 +12,7 @@ const HOP_FRAMES = 172;
 const SOFTMAX_TEMP = 0.15;
 const MEDIAN_WIDTH = 9;
 const PEAK_THRESHOLD = 0.15;
+const HPSS_KERNEL = 31;  // median filter kernel for HPSS (must be odd)
 
 let chromaFB = null;
 let hannWindow = null;
@@ -50,9 +53,9 @@ function fft(re, im) {
     }
 }
 
-// ---- STFT -> Chromagram pipeline ----
+// ---- STFT ----
 
-function processAudio(samples) {
+function computeSTFT(samples) {
     const n = samples.length;
     const nBins = (N_FFT >> 1) + 1;
     const pad = N_FFT >> 1;
@@ -62,8 +65,8 @@ function processAudio(samples) {
     const nFrames = Math.floor((padded.length - N_FFT) / HOP_LENGTH) + 1;
     if (nFrames <= 0) return null;
 
-    // STFT -> power spectrogram -> chromagram in one pass to save memory
-    const chroma = new Float32Array(N_CHROMA * nFrames);
+    // Store magnitude spectrogram (nBins x nFrames, row-major by bin)
+    const mag = new Float32Array(nBins * nFrames);
     const re = new Float32Array(N_FFT);
     const im = new Float32Array(N_FFT);
 
@@ -74,24 +77,104 @@ function processAudio(samples) {
             im[i] = 0;
         }
         fft(re, im);
-        // Multiply power spectrum by filter bank directly
+        for (let b = 0; b < nBins; b++) {
+            mag[b * nFrames + f] = re[b] * re[b] + im[b] * im[b];  // power spectrum
+        }
+    }
+
+    return { mag, nFrames, nBins };
+}
+
+// ---- HPSS (Harmonic-Percussive Source Separation) ----
+// Harmonic = median filter along time axis (each frequency bin)
+// Percussive = median filter along frequency axis (each time frame)
+// Soft mask separates them.
+
+function median1d(arr, len, kernel) {
+    const half = kernel >> 1;
+    const out = new Float32Array(len);
+    const buf = new Float32Array(kernel);
+    for (let i = 0; i < len; i++) {
+        const start = Math.max(0, i - half);
+        const end = Math.min(len - 1, i + half);
+        const count = end - start + 1;
+        for (let j = 0; j < count; j++) buf[j] = arr[start + j];
+        // Partial sort for median
+        const sub = buf.subarray(0, count);
+        sub.sort();
+        out[i] = sub[count >> 1];
+    }
+    return out;
+}
+
+function hpss(mag, nFrames, nBins) {
+    // Harmonic: median along time for each frequency bin
+    const harmonic = new Float32Array(nBins * nFrames);
+    for (let b = 0; b < nBins; b++) {
+        const row = mag.subarray(b * nFrames, b * nFrames + nFrames);
+        const med = median1d(row, nFrames, HPSS_KERNEL);
+        harmonic.set(med, b * nFrames);
+    }
+
+    // Percussive: median along frequency for each time frame
+    const percussive = new Float32Array(nBins * nFrames);
+    const col = new Float32Array(nBins);
+    for (let f = 0; f < nFrames; f++) {
+        for (let b = 0; b < nBins; b++) col[b] = mag[b * nFrames + f];
+        const med = median1d(col, nBins, HPSS_KERNEL);
+        for (let b = 0; b < nBins; b++) percussive[b * nFrames + f] = med[b];
+    }
+
+    // Soft mask: H_mask = H^2 / (H^2 + P^2 + eps)
+    const harmonicMasked = new Float32Array(nBins * nFrames);
+    const eps = 1e-10;
+    for (let i = 0; i < harmonicMasked.length; i++) {
+        const h2 = harmonic[i] * harmonic[i];
+        const p2 = percussive[i] * percussive[i];
+        const mask = h2 / (h2 + p2 + eps);
+        harmonicMasked[i] = mag[i] * mask;
+    }
+
+    return harmonicMasked;
+}
+
+// ---- Spectrogram -> Chromagram ----
+
+function specToChroma(spec, nFrames, nBins) {
+    const chroma = new Float32Array(N_CHROMA * nFrames);
+    for (let f = 0; f < nFrames; f++) {
         for (let c = 0; c < N_CHROMA; c++) {
             let sum = 0;
             const cBase = c * nBins;
             for (let b = 0; b < nBins; b++) {
-                sum += chromaFB[cBase + b] * (re[b] * re[b] + im[b] * im[b]);
+                sum += chromaFB[cBase + b] * spec[b * nFrames + f];
             }
             chroma[c * nFrames + f] = sum;
         }
     }
-
-    // Median filter
-    const filtered = medianFilter(chroma, nFrames);
-    // Peak normalize
-    peakNormalize(filtered, nFrames);
-
-    return { chroma: filtered, nFrames };
+    return chroma;
 }
+
+// ---- Standard chromagram pipeline ----
+
+function processStandard(mag, nFrames, nBins) {
+    const chroma = specToChroma(mag, nFrames, nBins);
+    const filtered = medianFilter(chroma, nFrames);
+    peakNormalize(filtered, nFrames);
+    return filtered;
+}
+
+// ---- Harmonic (foreground) chromagram pipeline ----
+
+function processForeground(mag, nFrames, nBins) {
+    const harmonicSpec = hpss(mag, nFrames, nBins);
+    const chroma = specToChroma(harmonicSpec, nFrames, nBins);
+    const filtered = medianFilter(chroma, nFrames);
+    peakNormalize(filtered, nFrames);
+    return filtered;
+}
+
+// ---- Shared utilities ----
 
 function medianFilter(chroma, nFrames) {
     const half = MEDIAN_WIDTH >> 1;
@@ -99,7 +182,6 @@ function medianFilter(chroma, nFrames) {
     for (let c = 0; c < N_CHROMA; c++) {
         const row = c * nFrames;
         for (let f = 0; f < nFrames; f++) {
-            // Collect neighbours
             const start = Math.max(0, f - half);
             const end = Math.min(nFrames - 1, f + half);
             const count = end - start + 1;
@@ -190,23 +272,19 @@ function prepareModelInputs(chroma, nFrames) {
 }
 
 // ---- Tempo estimation ----
-// Onset-based: compute spectral flux, pick peaks, measure inter-onset intervals.
 
 function estimateTempo(samples) {
-    // Compute energy in short frames for onset detection
     const frameLen = 1024;
     const hopLen = 512;
     const nFrames = Math.floor((samples.length - frameLen) / hopLen) + 1;
     if (nFrames < 10) return null;
 
-    // Spectral flux: sum of positive differences in magnitude spectrum between frames
     const re = new Float32Array(frameLen);
     const im = new Float32Array(frameLen);
     const nBins = (frameLen >> 1) + 1;
     let prevMag = new Float32Array(nBins);
     const flux = new Float32Array(nFrames);
 
-    // Small Hann window for onset detection
     const onsetHann = new Float32Array(frameLen);
     for (let i = 0; i < frameLen; i++)
         onsetHann[i] = 0.5 * (1 - Math.cos(2 * Math.PI * i / frameLen));
@@ -229,15 +307,13 @@ function estimateTempo(samples) {
         flux[f] = fluxSum;
     }
 
-    // Normalize flux
     let maxFlux = 0;
     for (let i = 0; i < nFrames; i++) if (flux[i] > maxFlux) maxFlux = flux[i];
     if (maxFlux < 1e-10) return null;
     for (let i = 0; i < nFrames; i++) flux[i] /= maxFlux;
 
-    // Pick onset peaks (flux > threshold and local maximum)
     const threshold = 0.15;
-    const onsets = []; // in seconds
+    const onsets = [];
     for (let i = 2; i < nFrames - 2; i++) {
         if (flux[i] > threshold &&
             flux[i] > flux[i-1] && flux[i] > flux[i-2] &&
@@ -248,18 +324,15 @@ function estimateTempo(samples) {
 
     if (onsets.length < 4) return null;
 
-    // Compute inter-onset intervals
     const iois = [];
     for (let i = 1; i < onsets.length; i++) {
         const dt = onsets[i] - onsets[i-1];
-        if (dt > 0.08 && dt < 1.5) iois.push(dt); // filter extreme values
+        if (dt > 0.08 && dt < 1.5) iois.push(dt);
     }
     if (iois.length < 3) return null;
 
-    // Use autocorrelation of the onset signal to find the dominant periodicity
-    // This is more robust than just averaging IOIs
-    const maxLag = Math.min(nFrames, Math.floor(2.0 * SAMPLE_RATE / hopLen)); // up to 2s
-    const minLag = Math.floor(0.2 * SAMPLE_RATE / hopLen); // at least 0.2s (300 BPM max)
+    const maxLag = Math.min(nFrames, Math.floor(2.0 * SAMPLE_RATE / hopLen));
+    const minLag = Math.floor(0.2 * SAMPLE_RATE / hopLen);
     let bestLag = minLag;
     let bestCorr = -Infinity;
 
@@ -280,8 +353,6 @@ function estimateTempo(samples) {
     const beatPeriod = bestLag * hopLen / SAMPLE_RATE;
     const bpm = 60.0 / beatPeriod;
 
-    // Irish tunes are typically 80-180 BPM. If we got a subdivision,
-    // multiply up; if a super-period, divide down.
     let adjustedBpm = bpm;
     if (adjustedBpm < 60) adjustedBpm *= 2;
     if (adjustedBpm < 60) adjustedBpm *= 2;
@@ -297,7 +368,6 @@ self.onmessage = function(e) {
     const { type, data } = e.data;
 
     if (type === 'init') {
-        // Receive filter bank and precompute Hann window
         chromaFB = new Float32Array(data.chromaFB);
         hannWindow = new Float32Array(N_FFT);
         for (let i = 0; i < N_FFT; i++)
@@ -307,22 +377,38 @@ self.onmessage = function(e) {
 
     if (type === 'process') {
         const samples = new Float32Array(data.samples);
-        const result = processAudio(samples);
-        if (!result) {
+
+        // Compute STFT once, reuse for both paths
+        const stft = computeSTFT(samples);
+        if (!stft) {
             self.postMessage({ type: 'result', data: null });
             return;
         }
 
-        const tempo = estimateTempo(samples);
-        const tensors = prepareModelInputs(result.chroma, result.nFrames);
+        const { mag, nFrames, nBins } = stft;
 
-        const transferables = [result.chroma.buffer, ...tensors.map(t => t.buffer)];
+        // Standard chromagram path
+        const chromaStd = processStandard(mag, nFrames, nBins);
+        const tensorsStd = prepareModelInputs(chromaStd, nFrames);
+
+        // Foreground (harmonic-only) chromagram path
+        const chromaFg = processForeground(mag, nFrames, nBins);
+        const tensorsFg = prepareModelInputs(chromaFg, nFrames);
+
+        const tempo = estimateTempo(samples);
+
+        const transferables = [
+            chromaStd.buffer,
+            ...tensorsStd.map(t => t.buffer),
+            ...tensorsFg.map(t => t.buffer),
+        ];
         self.postMessage({
             type: 'result',
             data: {
-                chroma: result.chroma,
-                nFrames: result.nFrames,
-                tensors: tensors,
+                chroma: chromaStd,
+                nFrames: nFrames,
+                tensors: tensorsStd,
+                tensorsFg: tensorsFg,
                 tempo: tempo,
             }
         }, transferables);
