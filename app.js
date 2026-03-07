@@ -1174,14 +1174,34 @@ function renderHistory() {
 function initSplash() {
     const splash = $('splash');
     const btn = $('splashStart');
+    const fox = document.querySelector('.splash-fox');
+    let isFox = true;
+    let animating = false;
+
+    fox.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (animating) return;
+        animating = true;
+        fox.classList.add('spin-out');
+        fox.addEventListener('animationend', function onOut() {
+            fox.removeEventListener('animationend', onOut);
+            fox.classList.remove('spin-out');
+            fox.textContent = isFox ? '\uD83D\uDC37' : '\uD83E\uDD8A';
+            isFox = !isFox;
+            fox.classList.add('spin-in');
+            fox.addEventListener('animationend', function onIn() {
+                fox.removeEventListener('animationend', onIn);
+                fox.classList.remove('spin-in');
+                animating = false;
+            });
+        });
+    });
+
     btn.addEventListener('click', () => {
-        // Show dashboard, fade out splash
         $('dashboard').style.display = '';
         splash.classList.add('fade-out');
         setTimeout(() => { splash.style.display = 'none'; }, 600);
-        // Fade in tagline
         setTimeout(() => { $('tagline').style.opacity = '1'; }, 800);
-        // Start loading resources
         init();
     });
 }
