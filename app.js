@@ -61,9 +61,11 @@ const SILENCE_THRESHOLD = 0.005;  // RMS below this = silence/noise
 const SILENCE_CYCLES = 2;  // cycles of quiet before declaring "stopped"
 let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
-let heroObserver = null;  // IntersectionObserver for hero card visibility
+let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
+let lastChroma = null;    // latest chromagram for setting matching
+let lastChromaNFrames = 0;
 let sheetLocked = false;        // user pinned the sheet music
 let silenceUnlockTimer = null;  // 60s silence before countdown starts
 let unlockInterval = null;      // 1s tick for countdown
@@ -282,6 +284,8 @@ async function handleWorkerResult(data) {
     }
 
     lastNFrames = nFrames;
+    lastChroma = chroma;
+    lastChromaNFrames = nFrames;
     drawChromagram(chroma, rawEnergy, nFrames);
     drawSilenceOverlay(rawEnergy, nFrames);
 
@@ -696,7 +700,7 @@ function loadSheetForTune(tuneId) {
     if (!entry || !entry.settings || entry.settings.length === 0) return;
 
     sheetSettings = entry.settings;
-    sheetSettingIdx = 0;
+    sheetSettingIdx = bestSettingIndex(entry.settings, entry.key || '');
     renderSheet();
     $('sheetPanel').classList.add('open');
     updateSheetContext();
@@ -714,6 +718,99 @@ function abcKeyField(keyStr) {
     const mode = m[2].toLowerCase();
     const modeMap = { major: 'maj', minor: 'min', dorian: 'dor', mixolydian: 'mix', lydian: 'lyd', phrygian: 'phr', locrian: 'loc' };
     return note + (modeMap[mode] || mode);
+}
+
+// ---- Setting matching via pitch-class correlation ----
+
+// Parse ABC body into a 12-bin pitch-class histogram (C=0, C#=1, ... B=11)
+function abcPitchHistogram(abc, keyField) {
+    const hist = new Float32Array(12);
+    // Base pitch classes for note letters: C D E F G A B
+    const basePC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+
+    // Parse key signature accidentals
+    const keySigs = {
+        // Major keys
+        'C': [], 'G': ['F#'], 'D': ['F#','C#'], 'A': ['F#','C#','G#'],
+        'E': ['F#','C#','G#','D#'], 'B': ['F#','C#','G#','D#','A#'],
+        'F': ['Bb'], 'Bb': ['Bb','Eb'], 'Eb': ['Bb','Eb','Ab'],
+        'Ab': ['Bb','Eb','Ab','Db'], 'Db': ['Bb','Eb','Ab','Db','Gb'],
+        // Common modes are handled by base key
+    };
+    // Extract tonic from key field (e.g. "Gmaj" -> "G", "Edor" -> "E")
+    const keyMatch = (keyField || '').match(/^([A-G][b#]?)/);
+    const keyNote = keyMatch ? keyMatch[1] : 'C';
+    const keyAccidentals = {};
+    const sigAccs = keySigs[keyNote] || [];
+    for (const acc of sigAccs) {
+        const note = acc[0];
+        keyAccidentals[note] = acc.length > 1 ? (acc[1] === '#' ? 1 : -1) : 0;
+    }
+
+    // Strip header lines and bar markers
+    const body = abc.split('\n')
+        .filter(l => !l.match(/^[A-Za-z]:/))
+        .join(' ');
+
+    // Parse notes: optional accidental (^, ^^, _, __, =), note letter (A-Ga-g), optional octave marks (',)
+    const noteRegex = /(\^{1,2}|_{1,2}|=)?([A-Ga-g])/g;
+    let m;
+    while ((m = noteRegex.exec(body)) !== null) {
+        const accStr = m[1] || '';
+        const letter = m[2].toUpperCase();
+        if (!basePC.hasOwnProperty(letter)) continue;
+
+        let pc = basePC[letter];
+        if (accStr === '^') pc = (pc + 1) % 12;
+        else if (accStr === '^^') pc = (pc + 2) % 12;
+        else if (accStr === '_') pc = (pc + 11) % 12;
+        else if (accStr === '__') pc = (pc + 10) % 12;
+        else if (accStr === '=') { /* natural, use base */ }
+        else if (keyAccidentals[letter]) pc = (pc + keyAccidentals[letter] + 12) % 12;
+
+        hist[pc]++;
+    }
+
+    // Normalize
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += hist[i];
+    if (sum > 0) for (let i = 0; i < 12; i++) hist[i] /= sum;
+    return hist;
+}
+
+// Average the live chromagram into a 12-bin profile
+function chromaProfile(chroma, nFrames) {
+    const profile = new Float32Array(12);
+    for (let c = 0; c < 12; c++) {
+        let sum = 0;
+        for (let f = 0; f < nFrames; f++) sum += chroma[c * nFrames + f];
+        profile[c] = sum / nFrames;
+    }
+    // Normalize
+    let total = 0;
+    for (let i = 0; i < 12; i++) total += profile[i];
+    if (total > 0) for (let i = 0; i < 12; i++) profile[i] /= total;
+    return profile;
+}
+
+// Cosine similarity between two 12-bin vectors
+function cosineSim(a, b) {
+    let dot = 0, na = 0, nb = 0;
+    for (let i = 0; i < 12; i++) { dot += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+    return (na > 0 && nb > 0) ? dot / (Math.sqrt(na) * Math.sqrt(nb)) : 0;
+}
+
+// Pick the setting whose ABC pitch histogram best matches the live chromagram
+function bestSettingIndex(settings, keyField) {
+    if (!lastChroma || lastChromaNFrames === 0 || settings.length <= 1) return 0;
+    const live = chromaProfile(lastChroma, lastChromaNFrames);
+    let bestIdx = 0, bestSim = -1;
+    for (let i = 0; i < settings.length; i++) {
+        const hist = abcPitchHistogram(settings[i].abc, keyField);
+        const sim = cosineSim(live, hist);
+        if (sim > bestSim) { bestSim = sim; bestIdx = i; }
+    }
+    return bestIdx;
 }
 
 function renderSheet() {
@@ -757,7 +854,7 @@ function hideSheet() {
     sheetFetchId = null;
     lockCount = 0;
     if (autoScrollTimer) { clearTimeout(autoScrollTimer); autoScrollTimer = null; }
-    stopSheetContext();
+    $('sheetContext').classList.remove('visible');
 }
 
 // ---- Sheet lock ----
@@ -792,9 +889,16 @@ function lockSheet() {
 }
 
 function unlockSheet() {
+    const nextTuneId = rivalTuneId;
     sheetLocked = false;
     clearAllUnlockTimers();
+    resetTransitionVisuals();
     updateLockUI();
+    // If a rival tune triggered the unlock, load it as the new sheet
+    if (nextTuneId && tuneById[nextTuneId]) {
+        lockedTuneId = null; // allow loadSheetForTune to proceed
+        loadSheetForTune(nextTuneId);
+    }
 }
 
 function updateLockUI() {
@@ -815,12 +919,74 @@ function updateLockUI() {
     }
 }
 
-// Start the 15s visible countdown to unlock
+// Render a tune's sheet music into an arbitrary element
+function renderSheetInto(elementId, tuneId) {
+    const entry = tuneById[tuneId];
+    if (!entry || !entry.settings || entry.settings.length === 0) return;
+    const setting = entry.settings[0];
+    const tuneType = entry.type || '';
+    const keyStr = entry.key || '';
+    const typeInfo = TYPE_INFO[tuneType];
+    const meter = typeInfo?.timeSig || '4/4';
+    const kField = abcKeyField(keyStr);
+    const body = setting.abc.split('\n').filter(l => !l.match(/^[TMLKXWRS]:/)).join('\n');
+    const abc = `X:1\nT:${entry.name}\nR:${typeInfo?.label || ''}\nM:${meter}\nL:1/8\nK:${kField}\n${body}`;
+    ABCJS.renderAbc(elementId, abc, {
+        responsive: 'resize', staffwidth: 600,
+        paddingtop: 10, paddingbottom: 10, scale: 1.2,
+        foregroundColor: '#c8e0b0',
+    });
+}
+
+// Update countdown transition visuals
+function updateCountdownTransition() {
+    const render = $('sheetRender');
+    const next = $('sheetRenderNext');
+    const progress = 1 - (unlockCountdown / LOCK_COUNTDOWN); // 0 -> 1
+
+    // Border: orange -> intense red
+    const r = Math.round(232 + (230 - 232) * progress);
+    const g = Math.round(148 * (1 - progress));
+    const b = Math.round(74 * (1 - progress * 0.7));
+    render.style.borderColor = `rgb(${r},${g},${b})`;
+    render.style.borderWidth = `${1 + progress * 2}px`;
+
+    // Current sheet SVG fades out
+    const svg = render.querySelector('svg');
+    if (svg) svg.style.opacity = 1 - progress * 0.9;
+
+    // Next sheet fades in on top and scales up toward us
+    const scale = 0.92 + progress * 0.08;
+    next.style.opacity = progress;
+    next.style.transform = `scale(${scale})`;
+}
+
+// Reset transition visuals
+function resetTransitionVisuals() {
+    const render = $('sheetRender');
+    const next = $('sheetRenderNext');
+    render.style.borderColor = '';
+    render.style.borderWidth = '';
+    const svg = render.querySelector('svg');
+    if (svg) svg.style.opacity = '';
+    next.style.opacity = '0';
+    next.style.transform = '';
+    next.innerHTML = '';
+}
+
+// Start the 5s visible countdown to unlock
 function startUnlockCountdown() {
     if (!sheetLocked) return;
     if (unlockInterval) return; // already counting
     unlockCountdown = LOCK_COUNTDOWN;
+
+    // Pre-render the rival tune behind the current sheet
+    if (rivalTuneId && tuneById[rivalTuneId]) {
+        renderSheetInto('sheetRenderNext', rivalTuneId);
+    }
+
     updateLockUI();
+    updateCountdownTransition();
     unlockInterval = setInterval(() => {
         unlockCountdown--;
         if (unlockCountdown <= 0) {
@@ -829,6 +995,7 @@ function startUnlockCountdown() {
             unlockSheet();
         } else {
             updateLockUI();
+            updateCountdownTransition();
         }
     }, 1000);
 }
@@ -840,6 +1007,7 @@ function resetUnlockCountdown() {
     if (unlockCountdown > 0) {
         unlockCountdown = 0;
         updateLockUI();
+        resetTransitionVisuals();
     }
 }
 
@@ -849,6 +1017,7 @@ function clearAllUnlockTimers() {
     unlockCountdown = 0;
     rivalTuneId = null;
     rivalCount = 0;
+    resetTransitionVisuals();
 }
 
 // Called when music goes silent while sheet is locked — wait 60s then countdown
@@ -891,29 +1060,11 @@ function updateSheetContext() {
     if (lockedTuneConf > 0) parts.push(`<span class="ctx-conf">${(lockedTuneConf * 100).toFixed(0)}%</span>`);
     el.innerHTML = `<span class="sheet-context-name">${entry.name}</span>` +
         (parts.length ? `<span class="sheet-context-meta">${parts.join(' · ')}</span>` : '');
-}
-
-function startSheetContext() {
-    updateSheetContext();
-    $('sheetContext').classList.add('visible');
-}
-
-function stopSheetContext() {
-    $('sheetContext').classList.remove('visible');
+    el.classList.add('visible');
 }
 
 function initHeroObserver() {
-    if (heroObserver) return;
-    const hero = document.querySelector('.hero');
-    heroObserver = new IntersectionObserver((entries) => {
-        const heroVisible = entries[0].isIntersecting;
-        if (!heroVisible && lockedTuneId) {
-            startSheetContext();
-        } else {
-            stopSheetContext();
-        }
-    }, { threshold: 0 });
-    heroObserver.observe(hero);
+    // No-op: sheet context is now always visible when a tune is loaded
 }
 
 // ---- Session History ----

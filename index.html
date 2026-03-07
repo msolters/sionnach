@@ -145,6 +145,15 @@ button:disabled { opacity: 0.4; cursor: default; }
     60% { transform: translateX(-2px); }
     80% { transform: translateX(2px); }
 }
+.sheet-stage { position: relative; overflow: hidden; }
+.sheet-render-next {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 3; opacity: 0; pointer-events: none;
+    transform: scale(0.92);
+    transform-origin: center center;
+    background: transparent; border-color: transparent;
+    overflow: hidden;
+}
 .sheet-context {
     display: flex; align-items: center; gap: 10px;
     flex: 1; justify-content: center; min-width: 0;
@@ -167,7 +176,8 @@ button:disabled { opacity: 0.4; cursor: default; }
 .sheet-render {
     background: #142018; border-radius: 8px; padding: 16px 20px;
     overflow-x: auto; border: 1px solid #243828;
-    cursor: pointer; transition: border-color 0.3s ease;
+    cursor: pointer; transition: border-color 0.5s ease;
+    position: relative; z-index: 2;
 }
 .sheet-render svg { display: block; max-width: 100%; pointer-events: none; }
 
@@ -438,7 +448,10 @@ canvas { display: block; border-radius: 6px; }
                                 <button class="sheet-nav-btn" id="nextSetting">&rsaquo;</button>
                             </div>
                         </div>
-                        <div class="sheet-render" id="sheetRender"></div>
+                        <div class="sheet-stage">
+                            <div class="sheet-render" id="sheetRender"></div>
+                            <div class="sheet-render sheet-render-next" id="sheetRenderNext"></div>
+                        </div>
                     </div>
                 </div>
 
