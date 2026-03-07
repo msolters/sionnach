@@ -145,14 +145,19 @@ button:disabled { opacity: 0.4; cursor: default; }
     60% { transform: translateX(-2px); }
     80% { transform: translateX(2px); }
 }
-.sheet-stage { position: relative; overflow: hidden; }
+.sheet-stage {
+    display: grid;
+}
+.sheet-stage > * {
+    grid-area: 1 / 1;
+}
 .sheet-render-next {
-    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
     z-index: 3; opacity: 0; pointer-events: none;
     transform: scale(0.92);
     transform-origin: center center;
     background: #142018; border-radius: 8px; padding: 16px 20px;
     overflow: hidden;
+    cursor: default;
 }
 .sheet-render-next svg { display: block; max-width: 100%; pointer-events: none; }
 .sheet-context {
