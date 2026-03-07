@@ -592,6 +592,17 @@ function formatType(type) {
     return info ? info.label : type;
 }
 
+function formatKey(keyStr) {
+    if (!keyStr) return '--';
+    const m = keyStr.match(/^([A-G][b#]?)(major|minor|dorian|mixolydian|lydian|phrygian|locrian)$/i);
+    if (!m) return keyStr;
+    const modeNames = {
+        major: 'Major', minor: 'Minor', dorian: 'Dor', mixolydian: 'Mix',
+        lydian: 'Lyd', phrygian: 'Phr', locrian: 'Loc',
+    };
+    return m[1] + ' ' + (modeNames[m[2].toLowerCase()] || m[2]);
+}
+
 function renderResults(predictions) {
     if (!predictions || !predictions.length) return;
 
@@ -609,7 +620,9 @@ function renderResults(predictions) {
         $('topTuneLink').classList.add('hidden');
     }
 
-    // Metrics: tempo and time signature (from top prediction's type + onset detection)
+    // Metrics
+    const tuneEntry = tuneById[top.id];
+    $('metricKey').textContent = tuneEntry ? formatKey(tuneEntry.key) : '--';
     if (topType) {
         $('metricTimeSig').textContent = topType.timeSig;
     } else {
@@ -1055,6 +1068,7 @@ function updateSheetContext() {
     const typeInfo = TYPE_INFO[entry.type];
     const parts = [];
     if (typeInfo) parts.push(`<span class="ctx-type">${typeInfo.label}</span>`);
+    if (entry.key) parts.push(formatKey(entry.key));
     if (typeInfo) parts.push(typeInfo.timeSig);
     if (currentTempo) parts.push(`${currentTempo} BPM`);
     if (lockedTuneConf > 0) parts.push(`<span class="ctx-conf">${(lockedTuneConf * 100).toFixed(0)}%</span>`);
