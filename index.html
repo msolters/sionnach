@@ -397,12 +397,14 @@ canvas { display: block; border-radius: 6px; }
 }
 
 @media (max-width: 600px) {
-    .page { padding: 8px; }
+    .page { padding: 4px; }
+    .layout { width: 100%; }
+    .main-col, .side-col { width: 100% !important; min-width: 0; }
     header h1 { font-size: 18px; }
     header p { font-size: 11px; }
 
     /* Hero card */
-    .hero { padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; }
+    .hero { padding: 10px 8px; margin-bottom: 8px; border-radius: 8px; }
     .hero-name { font-size: 16px; white-space: normal; }
     .hero-top { flex-direction: column; align-items: stretch; gap: 6px; }
     .hero-link { font-size: 12px; padding: 6px 12px; text-align: center; }
@@ -414,7 +416,7 @@ canvas { display: block; border-radius: 6px; }
     .controls { flex-wrap: wrap; }
 
     /* Search */
-    .search-input { font-size: 16px; padding: 10px 12px; }
+    .search-input { font-size: 16px; padding: 10px 8px; }
     .search-card { margin-bottom: 8px; }
 
     /* Audio visualization */
@@ -441,7 +443,7 @@ canvas { display: block; border-radius: 6px; }
     .pred-name { font-size: 13px; }
 
     /* History */
-    .history-card { padding: 10px 12px; margin-bottom: 8px; border-radius: 8px; }
+    .history-card { padding: 10px 8px; margin-bottom: 8px; border-radius: 8px; }
 
     /* Loading */
     #loadProgress { width: 80%; max-width: 200px; }
