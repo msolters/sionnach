@@ -122,7 +122,8 @@ async function startRecording() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-        $('tapStart').textContent = 'Microphone access denied — tap to retry';
+        $('topTuneName').innerHTML = '<a href="#" id="tapStart" class="start-link">Mic denied — retry</a>';
+        $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
         return;
     }
 
@@ -162,7 +163,6 @@ async function startRecording() {
     silenceCount = 0;
     lockCount = 0;
     sheetFetchId = null;
-    $('tapStart').classList.add('hidden');
     $('controlsBar').classList.remove('hidden');
     $('topTuneName').textContent = 'Listening...';
     $('topTuneType').textContent = '';
@@ -177,8 +177,8 @@ async function startRecording() {
     updateHandle = setInterval(requestAnalysis, UPDATE_INTERVAL_MS);
     } catch (e) {
         console.error('Failed to start recording:', e);
-        $('tapStart').textContent = 'Error: ' + e.message + ' — tap to retry';
-        $('tapStart').classList.remove('hidden');
+        $('topTuneName').innerHTML = `<a href="#" id="tapStart" class="start-link">Error — retry</a>`;
+        $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
         $('controlsBar').classList.add('hidden');
     }
 }
@@ -193,7 +193,8 @@ function stopRecording() {
     if (audioContext) { audioContext.close(); audioContext = null; }
 
     $('statusText').textContent = 'Stopped';
-    $('tapStart').classList.remove('hidden');
+    $('topTuneName').innerHTML = '<a href="#" id="tapStart" class="start-link">Start</a>';
+    $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
     $('controlsBar').classList.add('hidden');
     document.body.classList.remove('recording');
 
@@ -976,7 +977,7 @@ async function init() {
     $('loading').classList.add('hidden');
     $('mainUI').classList.remove('hidden');
 
-    $('tapStart').addEventListener('click', startRecording);
+    $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
     initHeroObserver();
     $('prevSetting').addEventListener('click', () => {
         if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); }

@@ -25,15 +25,12 @@ header p {
 }
 header p.fading { opacity: 0; }
 
-/* ---- Tap to start ---- */
-.tap-start {
-    text-align: center; padding: 14px; margin-bottom: 8px;
-    background: #1a2418; border-radius: 12px; cursor: pointer;
-    color: #6aaa3d; font-size: 15px; font-weight: 600;
-    transition: background 0.15s, opacity 0.15s;
-    border: 1px solid #2a3528;
+/* ---- Start link inside hero ---- */
+.start-link {
+    color: #6aaa3d; text-decoration: none; cursor: pointer;
+    transition: color 0.15s;
 }
-.tap-start:hover { background: #223020; }
+.start-link:hover { color: #a8cc8c; }
 
 /* ---- Controls bar ---- */
 .controls {
@@ -323,7 +320,6 @@ canvas { display: block; border-radius: 6px; }
     </div>
 
     <div id="mainUI" class="hidden">
-        <div class="tap-start" id="tapStart">Tap to start listening</div>
         <div class="controls hidden" id="controlsBar">
             <span id="statusText">Listening...</span>
             <span id="timer">0:00</span>
@@ -339,7 +335,7 @@ canvas { display: block; border-radius: 6px; }
                     <div class="hero-top">
                         <div class="hero-info">
                             <div class="hero-label">Current Tune</div>
-                            <div class="hero-name" id="topTuneName">Press Start to begin</div>
+                            <div class="hero-name" id="topTuneName"><a href="#" id="tapStart" class="start-link">Start</a></div>
                             <div class="hero-meta">
                                 <span class="hero-type" id="topTuneType"></span>
                                 <span class="hero-conf" id="topTuneConf"></span>
