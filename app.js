@@ -59,8 +59,6 @@ const SILENCE_THRESHOLD = 0.005;  // RMS below this = silence/noise
 const SILENCE_CYCLES = 2;  // cycles of quiet before declaring "stopped"
 let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
-let sheetContextInterval = null;  // rotating context info in sheet header
-let sheetContextIdx = 0;
 let heroObserver = null;  // IntersectionObserver for hero card visibility
 
 const $ = id => document.getElementById(id);
@@ -521,42 +519,27 @@ function scheduleAutoScroll() {
 
 // ---- Sheet context fader (visible when hero card scrolled out of view) ----
 
-function getSheetContextItems() {
-    if (!lockedTuneId) return [];
+function updateSheetContext() {
+    const el = $('sheetContext');
+    if (!lockedTuneId) { el.classList.remove('visible'); return; }
     const entry = tuneById[lockedTuneId];
-    if (!entry) return [];
-    const items = [entry.name];
+    if (!entry) return;
     const typeInfo = TYPE_INFO[entry.type];
-    if (typeInfo) items.push(typeInfo.label);
-    if (typeInfo) items.push(typeInfo.timeSig);
-    if (currentTempo) items.push(`${currentTempo} BPM`);
-    return items;
+    const parts = [];
+    if (typeInfo) parts.push(`<span class="ctx-type">${typeInfo.label}</span>`);
+    if (typeInfo) parts.push(typeInfo.timeSig);
+    if (currentTempo) parts.push(`${currentTempo} BPM`);
+    el.innerHTML = `<span class="sheet-context-name">${entry.name}</span>` +
+        (parts.length ? `<span class="sheet-context-meta">${parts.join(' · ')}</span>` : '');
 }
 
 function startSheetContext() {
-    if (sheetContextInterval) return;
-    const el = $('sheetContext');
-    const items = getSheetContextItems();
-    if (items.length === 0) return;
-    sheetContextIdx = 0;
-    el.textContent = items[0];
-    el.classList.add('visible');
-    sheetContextInterval = setInterval(() => {
-        const items = getSheetContextItems();
-        if (items.length === 0) return;
-        el.style.opacity = '0';
-        setTimeout(() => {
-            sheetContextIdx = (sheetContextIdx + 1) % items.length;
-            el.textContent = items[sheetContextIdx];
-            el.style.opacity = '';
-        }, 500);
-    }, 6000);
+    updateSheetContext();
+    $('sheetContext').classList.add('visible');
 }
 
 function stopSheetContext() {
-    if (sheetContextInterval) { clearInterval(sheetContextInterval); sheetContextInterval = null; }
-    const el = $('sheetContext');
-    el.classList.remove('visible');
+    $('sheetContext').classList.remove('visible');
 }
 
 function initHeroObserver() {
