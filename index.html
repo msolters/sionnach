@@ -137,6 +137,13 @@ button:disabled { opacity: 0.4; cursor: default; }
     align-items: center; justify-content: center;
 }
 .sheet-setting-label { font-size: 11px; color: #8899a6; min-width: 80px; text-align: center; }
+.sheet-context {
+    font-size: 12px; color: #e7e9ea; font-weight: 600;
+    flex: 1; text-align: center; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    opacity: 0; transition: opacity 0.5s ease;
+}
+.sheet-context.visible { opacity: 1; }
 .sheet-render {
     background: #1e2530; border-radius: 8px; padding: 16px 20px;
     overflow-x: auto; border: 1px solid #2a3040;
@@ -333,6 +340,7 @@ canvas { display: block; border-radius: 6px; }
                     <div class="sheet-panel-inner">
                         <div class="sheet-header">
                             <h3>Sheet Music</h3>
+                            <span class="sheet-context" id="sheetContext"></span>
                             <div class="sheet-nav">
                                 <button class="sheet-nav-btn" id="prevSetting">&lsaquo;</button>
                                 <span class="sheet-setting-label" id="settingLabel">Setting 1 of 1</span>
