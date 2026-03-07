@@ -1177,8 +1177,6 @@ function initSplash() {
     const fox = document.querySelector('.splash-fox');
     const emojiCycle = [
         '\uD83E\uDD8A', // fox
-        '\uD83D\uDC37', // pig
-        '\u2699\uFE0F', // gear
         '\uD83C\uDFBB', // violin
         '\uD83C\uDFB8', // guitar
         '\uD83C\uDFBA', // trumpet
@@ -1192,6 +1190,8 @@ function initSplash() {
         '\uD83E\uDE87', // maracas
         '\uD83E\uDE98', // long drum
         '\uD83C\uDFA4', // microphone
+        '\uD83D\uDC37', // pig
+        '\u2699\uFE0F', // gear
     ];
     let emojiIdx = 0;
     let animating = false;
@@ -1215,6 +1215,7 @@ function initSplash() {
     }
 
     setInterval(cycleEmoji, 2500);
+    btn.focus();
 
     btn.addEventListener('click', () => {
         $('dashboard').style.display = '';
@@ -1318,9 +1319,8 @@ async function init() {
         renderHistory();
     });
 
-    // Rotating taglines
+    // Rotating taglines — only start after 3 unique tunes identified
     const taglines = [
-        'Irish Tune Identifier',
         'What the hell is going on?',
         'Chaos is a Ladder',
         'Who is playing that bodhr\u00e1n?',
@@ -1337,13 +1337,18 @@ async function init() {
         'Pint of plain please',
         'Who started that?',
     ];
-    let tagIdx = 0;
+    let taglineActive = false;
     setInterval(() => {
+        if (!taglineActive) {
+            const uniqueIds = new Set(sessionHistory.map(e => e.id));
+            if (uniqueIds.size < 3) return;
+            taglineActive = true;
+        }
         const el = $('tagline');
+        const pick = taglines[Math.floor(Math.random() * taglines.length)];
         el.classList.add('fading');
         setTimeout(() => {
-            tagIdx = (tagIdx + 1) % taglines.length;
-            el.textContent = taglines[tagIdx];
+            el.textContent = pick;
             el.classList.remove('fading');
         }, 600);
     }, 12000);
