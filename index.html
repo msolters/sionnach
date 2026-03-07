@@ -399,6 +399,15 @@ canvas { display: block; border-radius: 6px; }
     </div>
 
     <div id="mainUI" class="hidden">
+        <!-- Tune search -->
+        <div class="search-card">
+            <div class="search-input-wrap">
+                <input type="text" id="tuneSearch" class="search-input" placeholder="Search tunes..." autocomplete="off">
+                <span class="search-clear hidden" id="searchClear">&times;</span>
+            </div>
+            <div class="search-results hidden" id="searchResults"></div>
+        </div>
+
         <div class="controls hidden" id="controlsBar">
             <span id="statusText">Listening...</span>
             <span id="timer">0:00</span>
@@ -457,15 +466,6 @@ canvas { display: block; border-radius: 6px; }
                             <div class="sheet-render sheet-render-next" id="sheetRenderNext"></div>
                         </div>
                     </div>
-                </div>
-
-                <!-- Tune search -->
-                <div class="search-card">
-                    <div class="search-input-wrap">
-                        <input type="text" id="tuneSearch" class="search-input" placeholder="Search tunes..." autocomplete="off">
-                        <span class="search-clear hidden" id="searchClear">&times;</span>
-                    </div>
-                    <div class="search-results hidden" id="searchResults"></div>
                 </div>
 
                 <!-- Chromagram -->
