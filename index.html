@@ -153,11 +153,24 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .sheet-render-next {
     z-index: 3; opacity: 0; pointer-events: none;
-    transform: scale(0.92);
+    transform: scale(0.95);
     transform-origin: center center;
     background: #142018; border-radius: 8px; padding: 16px 20px;
     overflow: hidden;
     cursor: default;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.sheet-render-next.entering {
+    opacity: 1; transform: scale(1);
+}
+.sheet-render.exiting svg {
+    transition: opacity 0.4s ease;
+    opacity: 0;
+}
+.sheet-render.exiting {
+    transition: border-color 0.4s ease, border-width 0.4s ease;
+    border-color: #cc2020 !important;
+    border-width: 3px !important;
 }
 .sheet-render-next svg { display: block; max-width: 100%; pointer-events: none; }
 .sheet-context {

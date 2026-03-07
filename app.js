@@ -968,40 +968,17 @@ function renderSheetInto(elementId, tuneId) {
     });
 }
 
-// Update countdown transition visuals
-function updateCountdownTransition() {
-    const render = $('sheetRender');
-    const next = $('sheetRenderNext');
-    const progress = 1 - (unlockCountdown / LOCK_COUNTDOWN); // 0 -> 1
-
-    // Border: orange -> intense red
-    const r = Math.round(232 + (230 - 232) * progress);
-    const g = Math.round(148 * (1 - progress));
-    const b = Math.round(74 * (1 - progress * 0.7));
-    render.style.borderColor = `rgb(${r},${g},${b})`;
-    render.style.borderWidth = `${1 + progress * 2}px`;
-
-    // Current sheet SVG fades out
-    const svg = render.querySelector('svg');
-    if (svg) svg.style.opacity = 1 - progress * 0.9;
-
-    // Next sheet fades in on top and scales up toward us
-    const scale = 0.92 + progress * 0.08;
-    next.style.opacity = progress;
-    next.style.transform = `scale(${scale})`;
+// Trigger the smooth crossfade transition
+function startSheetTransition() {
+    $('sheetRender').classList.add('exiting');
+    $('sheetRenderNext').classList.add('entering');
 }
 
 // Reset transition visuals
 function resetTransitionVisuals() {
-    const render = $('sheetRender');
-    const next = $('sheetRenderNext');
-    render.style.borderColor = '';
-    render.style.borderWidth = '';
-    const svg = render.querySelector('svg');
-    if (svg) svg.style.opacity = '';
-    next.style.opacity = '0';
-    next.style.transform = '';
-    next.innerHTML = '';
+    $('sheetRender').classList.remove('exiting');
+    $('sheetRenderNext').classList.remove('entering');
+    $('sheetRenderNext').innerHTML = '';
 }
 
 // Start the 5s visible countdown to unlock
@@ -1016,16 +993,16 @@ function startUnlockCountdown() {
     }
 
     updateLockUI();
-    updateCountdownTransition();
     unlockInterval = setInterval(() => {
         unlockCountdown--;
         if (unlockCountdown <= 0) {
             clearInterval(unlockInterval);
             unlockInterval = null;
-            unlockSheet();
+            startSheetTransition();
+            // Wait for transition to finish, then unlock
+            setTimeout(() => unlockSheet(), 400);
         } else {
             updateLockUI();
-            updateCountdownTransition();
         }
     }, 1000);
 }
