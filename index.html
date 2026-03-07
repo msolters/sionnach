@@ -151,9 +151,10 @@ button:disabled { opacity: 0.4; cursor: default; }
     z-index: 3; opacity: 0; pointer-events: none;
     transform: scale(0.92);
     transform-origin: center center;
-    background: transparent; border-color: transparent;
+    background: #142018; border-radius: 8px; padding: 16px 20px;
     overflow: hidden;
 }
+.sheet-render-next svg { display: block; max-width: 100%; pointer-events: none; }
 .sheet-context {
     display: flex; align-items: center; gap: 10px;
     flex: 1; justify-content: center; min-width: 0;
@@ -474,7 +475,7 @@ canvas { display: block; border-radius: 6px; }
                         </div>
                         <div class="sheet-stage">
                             <div class="sheet-render" id="sheetRender"></div>
-                            <div class="sheet-render sheet-render-next" id="sheetRenderNext"></div>
+                            <div class="sheet-render-next" id="sheetRenderNext"></div>
                         </div>
                     </div>
                 </div>
