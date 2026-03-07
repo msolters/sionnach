@@ -979,6 +979,23 @@ function updateCountdownBorder() {
     render.style.borderColor = `rgb(${r},${g},${b})`;
 }
 
+// Show "Coming up" context for the rival tune
+function showComingUpContext() {
+    if (!rivalTuneId) return;
+    const entry = tuneById[rivalTuneId];
+    if (!entry) return;
+    const el = $('sheetContext');
+    const typeInfo = TYPE_INFO[entry.type];
+    const typeLabel = typeInfo ? `<span class="ctx-type">${typeInfo.label}</span>` : '';
+    // Fade out, swap, fade in
+    el.classList.remove('visible');
+    setTimeout(() => {
+        el.innerHTML = `<span class="sheet-context-name">Coming up: ${entry.name}</span>` +
+            (typeLabel ? `<span class="sheet-context-meta">${typeLabel}</span>` : '');
+        el.classList.add('visible');
+    }, 300);
+}
+
 // Trigger the smooth crossfade transition
 function startSheetTransition() {
     $('sheetRender').classList.add('exiting');
@@ -991,6 +1008,7 @@ function resetTransitionVisuals() {
     $('sheetRender').style.borderColor = '';
     $('sheetRenderNext').classList.remove('entering');
     $('sheetRenderNext').innerHTML = '';
+    updateSheetContext();
 }
 
 // Start the 5s visible countdown to unlock
@@ -1006,6 +1024,7 @@ function startUnlockCountdown() {
 
     updateLockUI();
     updateCountdownBorder();
+    showComingUpContext();
     unlockInterval = setInterval(() => {
         unlockCountdown--;
         if (unlockCountdown <= 0) {
