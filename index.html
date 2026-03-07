@@ -21,18 +21,9 @@ header { text-align: center; margin-bottom: 16px; }
 header h1 { font-size: 22px; font-weight: 700; color: #a8cc8c; }
 header p {
     color: #7a9470; font-size: 13px; margin-top: 2px;
-    transition: opacity 0.6s ease;
+    transition: opacity 0.8s ease;
 }
 header p.fading { opacity: 0; }
-
-/* ---- Start button inside hero ---- */
-.start-link {
-    display: inline-block; padding: 8px 28px;
-    background: #3d7a2a; color: #d4ddd0; border-radius: 8px;
-    text-decoration: none; cursor: pointer; font-weight: 700;
-    font-size: 16px; transition: background 0.15s;
-}
-.start-link:hover { background: #4c8c30; }
 
 /* ---- Controls bar ---- */
 .controls {
@@ -138,7 +129,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .sheet-setting-label { font-size: 11px; color: #7a9470; min-width: 80px; text-align: center; }
 .sheet-lock {
-    width: 28px; height: 28px; padding: 0; margin-left: 4px;
+    width: 28px; height: 28px; padding: 0; margin-right: 4px;
     background: #2a3528; color: #7a9470; border-radius: 6px;
     font-size: 14px; line-height: 1; display: flex;
     align-items: center; justify-content: center;
@@ -272,6 +263,29 @@ canvas { display: block; border-radius: 6px; }
 .pred-pct { font-size: 13px; font-weight: 600; color: #7a9470; min-width: 40px; text-align: right; position: relative; }
 .empty-state { text-align: center; color: #4a6340; padding: 20px 0; font-size: 12px; }
 
+/* ---- Splash screen ---- */
+#splash {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: #0d1a0f; z-index: 1000;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    transition: opacity 0.6s ease;
+}
+#splash.fade-out { opacity: 0; pointer-events: none; }
+#splash .splash-title {
+    font-size: 42px; font-weight: 700; color: #a8cc8c;
+    transition: transform 0.8s ease, font-size 0.8s ease;
+}
+#splash .splash-fox { font-size: 48px; margin: 20px 0; }
+#splash .splash-btn {
+    display: inline-block; padding: 12px 36px;
+    background: #3d7a2a; color: #d4ddd0; border-radius: 10px;
+    text-decoration: none; cursor: pointer; font-weight: 700;
+    font-size: 18px; border: none; transition: background 0.15s;
+    margin-top: 8px;
+}
+#splash .splash-btn:hover { background: #4c8c30; }
+
 /* ---- Loading ---- */
 #loading { text-align: center; padding: 48px 0; }
 #loading p { margin-bottom: 12px; color: #7a9470; }
@@ -310,10 +324,15 @@ canvas { display: block; border-radius: 6px; }
 </style>
 </head>
 <body>
-<div class="page">
+<div id="splash">
+    <div class="splash-title">Sionnach</div>
+    <div class="splash-fox">&#x1F98A;</div>
+    <button class="splash-btn" id="splashStart">Get Started</button>
+</div>
+<div class="page" id="dashboard" style="display:none">
     <header>
         <h1>Sionnach</h1>
-        <p id="tagline">Irish Tune Identifier</p>
+        <p id="tagline" style="opacity:0">Irish Tune Identifier</p>
     </header>
 
     <div id="loading">
@@ -337,7 +356,7 @@ canvas { display: block; border-radius: 6px; }
                     <div class="hero-top">
                         <div class="hero-info">
                             <div class="hero-label">Current Tune</div>
-                            <div class="hero-name" id="topTuneName"><a href="#" id="tapStart" class="start-link">Start</a></div>
+                            <div class="hero-name" id="topTuneName">Listening...</div>
                             <div class="hero-meta">
                                 <span class="hero-type" id="topTuneType"></span>
                                 <span class="hero-conf" id="topTuneConf"></span>
@@ -362,6 +381,7 @@ canvas { display: block; border-radius: 6px; }
                 <div class="sheet-panel" id="sheetPanel">
                     <div class="sheet-panel-inner">
                         <div class="sheet-header">
+                            <button class="sheet-lock" id="sheetLock" title="Pin sheet music">&#x1F513;</button>
                             <h3>Sheet Music</h3>
                             <span class="sheet-context" id="sheetContext"></span>
                             <div class="sheet-nav">
@@ -369,7 +389,6 @@ canvas { display: block; border-radius: 6px; }
                                 <span class="sheet-setting-label" id="settingLabel">Setting 1 of 1</span>
                                 <button class="sheet-nav-btn" id="nextSetting">&rsaquo;</button>
                             </div>
-                            <button class="sheet-lock" id="sheetLock" title="Pin sheet music">&#x1F513;</button>
                         </div>
                         <div class="sheet-render" id="sheetRender"></div>
                     </div>
@@ -410,6 +429,6 @@ canvas { display: block; border-radius: 6px; }
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.4/dist/abcjs-basic-min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>

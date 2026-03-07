@@ -122,8 +122,9 @@ async function startRecording() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     } catch (e) {
-        $('topTuneName').innerHTML = '<a href="#" id="tapStart" class="start-link">Mic denied — retry</a>';
-        $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
+        $('topTuneName').textContent = 'Mic denied — tap to retry';
+        $('topTuneName').style.cursor = 'pointer';
+        $('topTuneName').onclick = () => { $('topTuneName').onclick = null; $('topTuneName').style.cursor = ''; startRecording(); };
         return;
     }
 
@@ -177,8 +178,9 @@ async function startRecording() {
     updateHandle = setInterval(requestAnalysis, UPDATE_INTERVAL_MS);
     } catch (e) {
         console.error('Failed to start recording:', e);
-        $('topTuneName').innerHTML = `<a href="#" id="tapStart" class="start-link">Error — retry</a>`;
-        $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
+        $('topTuneName').textContent = 'Error — tap to retry';
+        $('topTuneName').style.cursor = 'pointer';
+        $('topTuneName').onclick = () => { $('topTuneName').onclick = null; $('topTuneName').style.cursor = ''; startRecording(); };
         $('controlsBar').classList.add('hidden');
     }
 }
@@ -193,8 +195,7 @@ function stopRecording() {
     if (audioContext) { audioContext.close(); audioContext = null; }
 
     $('statusText').textContent = 'Stopped';
-    $('topTuneName').innerHTML = '<a href="#" id="tapStart" class="start-link">Start</a>';
-    $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
+    $('topTuneName').textContent = 'Stopped';
     $('controlsBar').classList.add('hidden');
     document.body.classList.remove('recording');
 
@@ -919,6 +920,23 @@ function renderHistory() {
 
 // ---- Initialization ----
 
+// ---- Splash screen ----
+
+function initSplash() {
+    const splash = $('splash');
+    const btn = $('splashStart');
+    btn.addEventListener('click', () => {
+        // Show dashboard, fade out splash
+        $('dashboard').style.display = '';
+        splash.classList.add('fade-out');
+        setTimeout(() => { splash.style.display = 'none'; }, 600);
+        // Fade in tagline
+        setTimeout(() => { $('tagline').style.opacity = '1'; }, 800);
+        // Start loading resources
+        init();
+    });
+}
+
 async function init() {
     const status = $('loadText');
     const progress = $('loadProgress');
@@ -977,7 +995,7 @@ async function init() {
     $('loading').classList.add('hidden');
     $('mainUI').classList.remove('hidden');
 
-    $('tapStart').addEventListener('click', (ev) => { ev.preventDefault(); startRecording(); });
+    startRecording();
     initHeroObserver();
     $('prevSetting').addEventListener('click', () => {
         if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); }
@@ -1046,4 +1064,4 @@ async function init() {
     });
 }
 
-init();
+initSplash();
