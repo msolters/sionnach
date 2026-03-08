@@ -246,7 +246,10 @@ function updateTimerAndLevel() {
 // ---- Listening progress ring ----
 
 function updateListenRing() {
-    const isPlaying = inputLevel >= SILENCE_THRESHOLD;
+    // Use a higher threshold than silence detection — we want "music playing"
+    // not just "any sound." ~-35dB RMS is a reasonable floor for actual music.
+    const MUSIC_THRESHOLD = 0.02;
+    const isPlaying = inputLevel >= MUSIC_THRESHOLD;
     if (isPlaying) {
         listenPauseCount = 0;
         listenProgress = Math.min(listenProgress + 0.1, LISTEN_TARGET);
