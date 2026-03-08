@@ -345,9 +345,8 @@ function onTopPredictionChanged(newTopId) {
     if (newTopId !== listenRingTuneId) {
         listenRingTuneId = newTopId;
         listenStabilityCount = 0;
-        listenMusicSec = 0;
-        listenPauseCount = 0;
-        // Reset autoscroll so it can re-trigger for the new tune
+        // Don't reset listenMusicSec — phase 1 tracks "music is playing"
+        // independent of which tune. Only phases 2-3 reset on tune change.
         autoScrollTimer = null;
     }
 }
