@@ -85,9 +85,9 @@ const LOCK_TAP_SEC = 30;        // seconds added per tap
 let longPressTimer = null;      // for detecting 2s hold
 
 // Temporal smoothing: EMA over prediction scores across analysis cycles
-let smoothedProbs = null;        // Float32Array(nClasses), null until first prediction
-const EMA_ALPHA = 0.4;           // weight of new prediction (0.4 = moderate smoothing)
+const CONSENSUS_WINDOW = 8;      // rolling window size (~8 seconds at 1s intervals)
 const CONFIDENCE_FLOOR = 0.05;   // below this top prob = "not confident" (noise/silence)
+let recentProbs = [];             // circular buffer of recent probability vectors
 
 const $ = id => document.getElementById(id);
 
@@ -395,9 +395,9 @@ async function handleWorkerResult(data) {
             $('topTuneType').textContent = '';
             $('topTuneConf').textContent = '';
             $('topTuneLink').classList.add('hidden');
-            // Decay smoothed predictions so stale guesses fade
-            if (smoothedProbs) {
-                for (let i = 0; i < smoothedProbs.length; i++) smoothedProbs[i] *= 0.8;
+            // Halve the rolling window so stale guesses fade
+            if (recentProbs.length > 2) {
+                recentProbs = recentProbs.slice(-Math.ceil(recentProbs.length / 2));
             }
         }
     } else {
@@ -407,7 +407,7 @@ async function handleWorkerResult(data) {
             musicActive = true;
             lockCount = 0;
             sheetFetchId = null;
-            smoothedProbs = null;  // reset so stale predictions don't linger
+            recentProbs = [];  // reset so stale predictions don't linger
             $('topTuneName').textContent = 'Listening...';
         }
     }
@@ -508,20 +508,23 @@ async function handleWorkerResult(data) {
         for (let i = 0; i < nClasses; i++) avg[i] = avgStd[i];
     }
 
-    // Temporal smoothing: EMA blends new prediction with accumulated history.
-    // Prevents brief flickers to wrong tunes and stabilizes during noise.
-    if (!smoothedProbs) {
-        smoothedProbs = new Float32Array(avg);
-    } else {
-        for (let i = 0; i < nClasses; i++) {
-            smoothedProbs[i] = EMA_ALPHA * avg[i] + (1 - EMA_ALPHA) * smoothedProbs[i];
-        }
+    // Rolling window consensus: keep last N prediction vectors and average.
+    // This naturally handles "50% tune A, rest scattered" — tune A dominates
+    // because the scattered votes dilute each other.
+    recentProbs.push(avg);
+    if (recentProbs.length > CONSENSUS_WINDOW) recentProbs.shift();
+
+    const consensus = new Float32Array(nClasses);
+    for (const p of recentProbs) {
+        for (let i = 0; i < nClasses; i++) consensus[i] += p[i];
     }
+    const windowLen = recentProbs.length;
+    for (let i = 0; i < nClasses; i++) consensus[i] /= windowLen;
 
     const indices = Array.from({ length: nClasses }, (_, i) => i);
-    indices.sort((a, b) => smoothedProbs[b] - smoothedProbs[a]);
+    indices.sort((a, b) => consensus[b] - consensus[a]);
 
-    const topProb = smoothedProbs[indices[0]];
+    const topProb = consensus[indices[0]];
 
     // If confidence is below floor, treat as noise — don't update predictions
     if (topProb < CONFIDENCE_FLOOR) {
@@ -539,7 +542,7 @@ async function handleWorkerResult(data) {
     } else {
         const predictions = indices.slice(0, 10).map((idx, rank) => ({
             rank: rank + 1,
-            prob: smoothedProbs[idx],
+            prob: consensus[idx],
             id: tuneIndex[idx]?.id,
             name: tuneIndex[idx]?.name || `Unknown #${idx}`,
             type: tuneIndex[idx]?.type || '',
