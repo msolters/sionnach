@@ -591,11 +591,15 @@ canvas { display: block; border-radius: 6px; }
                         <div class="sheet-header">
                             <span class="sheet-lock-icon" id="sheetLockIcon">&#x1F513;</span>
                             <h3>Sheet Music</h3>
-                            <span class="sheet-context" id="sheetContext"></span>
-                            <svg class="listen-ring-svg sheet-ring" viewBox="0 0 80 80">
-                                <circle class="listen-ring-bg" cx="40" cy="40" r="34" />
-                                <circle class="listen-ring-fill" id="sheetRingFill" cx="40" cy="40" r="34" />
-                            </svg>
+                            <span class="sheet-context" id="sheetContext">
+                                <span class="sheet-context-name" id="sheetCtxName"></span>
+                                <span class="sheet-context-meta" id="sheetCtxMeta"></span>
+                                <svg class="listen-ring-svg sheet-ring" viewBox="0 0 80 80">
+                                    <circle class="listen-ring-bg" cx="40" cy="40" r="34" />
+                                    <circle class="listen-ring-fill" id="sheetRingFill" cx="40" cy="40" r="34" />
+                                </svg>
+                                <span class="ctx-conf" id="sheetCtxConf"></span>
+                            </span>
                             <div class="sheet-nav sheet-nav-top">
                                 <button class="sheet-nav-btn" id="prevSetting">&lsaquo;</button>
                                 <span class="sheet-setting-label" id="settingLabel">Setting 1 of 1</span>

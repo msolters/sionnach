@@ -1143,12 +1143,12 @@ function showComingUpForTune(tuneId, confidence) {
     if (!entry) return;
     const el = $('sheetContext');
     const typeInfo = TYPE_INFO[entry.type];
-    const typeLabel = typeInfo ? `<span class="ctx-type">${typeInfo.label}</span>` : '';
     const opacity = confidence != null ? (0.3 + 0.7 * confidence) : 1;
     el.classList.remove('visible');
     setTimeout(() => {
-        el.innerHTML = `<span class="sheet-context-name">Coming up: ${entry.name}</span>` +
-            (typeLabel ? `<span class="sheet-context-meta">${typeLabel}</span>` : '');
+        $('sheetCtxName').textContent = `Coming up: ${entry.name}`;
+        $('sheetCtxMeta').textContent = typeInfo ? typeInfo.label : '';
+        $('sheetCtxConf').textContent = '';
         el.style.opacity = opacity;
         el.classList.add('visible');
     }, 300);
@@ -1251,17 +1251,15 @@ function updateSheetContext(currentTop) {
     const entry = tuneById[lockedTuneId];
     if (!entry) return;
     const typeInfo = TYPE_INFO[entry.type];
-    const parts = [];
-    if (typeInfo) parts.push(`<span class="ctx-type">${typeInfo.label}</span>`);
-    if (entry.key) parts.push(formatKey(entry.key));
-    if (typeInfo) parts.push(typeInfo.timeSig);
-    if (currentTempo) parts.push(`${currentTempo} BPM`);
-    // Use live confidence from current top prediction if available
+    const metaParts = [];
+    if (typeInfo) metaParts.push(typeInfo.label);
+    if (entry.key) metaParts.push(formatKey(entry.key));
+    if (typeInfo) metaParts.push(typeInfo.timeSig);
+    if (currentTempo) metaParts.push(`${currentTempo} BPM`);
+    $('sheetCtxName').textContent = entry.name;
+    $('sheetCtxMeta').textContent = metaParts.join(' \u00b7 ');
     const conf = currentTop ? currentTop.prob : lockedTuneConf;
-    if (conf > 0) parts.push(`<span class="ctx-conf">${(conf * 100).toFixed(0)}%</span>`);
-    el.innerHTML = `<span class="sheet-context-name">${entry.name}</span>` +
-        (parts.length ? `<span class="sheet-context-meta">${parts.join(' · ')}</span>` : '');
-    el.style.opacity = '';
+    $('sheetCtxConf').textContent = conf > 0 ? `${(conf * 100).toFixed(0)}%` : '';
     el.classList.add('visible');
 }
 
