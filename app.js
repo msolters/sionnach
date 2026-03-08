@@ -1346,7 +1346,12 @@ async function init() {
 
     // Sheet lock: tap to add 30s, long-press (2s) to unlock
     const sheetEl = $('sheetRender');
+    let longPressPointerId = null;
+
     sheetEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        sheetEl.setPointerCapture(e.pointerId);
+        longPressPointerId = e.pointerId;
         longPressTimer = setTimeout(() => {
             longPressTimer = 'fired';
             if (sheetLocked) {
@@ -1360,6 +1365,8 @@ async function init() {
         }, 2000);
     });
     sheetEl.addEventListener('pointerup', (e) => {
+        if (e.pointerId !== longPressPointerId) return;
+        longPressPointerId = null;
         if (longPressTimer === 'fired') {
             longPressTimer = null;
             return; // long press already handled
@@ -1369,7 +1376,9 @@ async function init() {
         // Short tap — add lock time
         if (lockedTuneId) addLockTime();
     });
-    sheetEl.addEventListener('pointerleave', () => {
+    sheetEl.addEventListener('pointercancel', (e) => {
+        if (e.pointerId !== longPressPointerId) return;
+        longPressPointerId = null;
         if (longPressTimer && longPressTimer !== 'fired') {
             clearTimeout(longPressTimer);
             longPressTimer = null;

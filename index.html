@@ -212,6 +212,8 @@ button:disabled { opacity: 0.4; cursor: default; }
     overflow-x: auto; border: 1px solid #243828;
     cursor: pointer; transition: border-color 0.5s ease;
     position: relative; z-index: 2;
+    touch-action: pan-x;
+    -webkit-user-select: none; user-select: none;
 }
 .sheet-render svg { display: block; max-width: 100%; pointer-events: none; }
 
