@@ -61,7 +61,7 @@ let sheetFetchId = null;  // tune ID currently being fetched/displayed
 let musicActive = false;   // true when signal is above noise floor
 let silenceCount = 0;      // consecutive quiet analysis cycles
 const SILENCE_THRESHOLD = 0.005;  // RMS below this = silence/noise
-const SILENCE_CYCLES = 2;  // cycles of quiet before declaring "stopped"
+const SILENCE_CYCLES = 5;  // cycles of quiet before declaring "stopped"
 let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
@@ -85,7 +85,7 @@ const LOCK_TAP_SEC = 30;        // seconds added per tap
 
 // Temporal smoothing: EMA over prediction scores across analysis cycles
 const CONSENSUS_WINDOW = 8;      // rolling window size (~8 seconds at 1s intervals)
-const CONFIDENCE_FLOOR = 0.05;   // below this top prob = "not confident" (noise/silence)
+const CONFIDENCE_FLOOR = 0.02;   // below this top prob = "not confident" (noise/silence)
 let recentProbs = [];             // circular buffer of recent probability vectors
 
 const $ = id => document.getElementById(id);
@@ -527,14 +527,9 @@ async function handleWorkerResult(data) {
 
     const topProb = consensus[indices[0]];
 
-    // If confidence is below floor, treat as noise — don't update predictions
+    // If confidence is below floor, keep last prediction visible but don't update
     if (topProb < CONFIDENCE_FLOOR) {
-        clearHeroTune(musicActive ? 'Listening...' : '');
-        // Reset ring — identification process is starting over
-        listenMusicSec = 0;
-        listenPauseCount = 0;
-        listenStabilityCount = 0;
-        listenRingTuneId = null;
+        // Don't clear — just hold whatever is currently showing
     } else {
         const predictions = indices.slice(0, 10).map((idx, rank) => ({
             rank: rank + 1,
