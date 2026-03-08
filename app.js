@@ -337,14 +337,9 @@ async function handleWorkerResult(data) {
 
     const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
 
-    // Detect silence using average energy across the full analysis window,
-    // not the instantaneous 5ms inputLevel which flickers between notes.
-    let windowEnergy = 0;
-    for (let f = 0; f < nFrames; f++) {
-        for (let c = 0; c < 12; c++) windowEnergy += rawEnergy[c * nFrames + f];
-    }
-    windowEnergy /= (nFrames * 12); // average per-bin per-frame energy
-    const isQuiet = windowEnergy < 0.001;
+    // Detect silence: use instantaneous input level. SILENCE_CYCLES (5 consecutive
+    // quiet worker results = ~5 seconds) filters out brief inter-note quiet spots.
+    const isQuiet = inputLevel < 0.005;
     if (isQuiet) {
         silenceCount++;
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
