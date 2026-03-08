@@ -838,6 +838,7 @@ function updateLockOn(top) {
             }
         }
         updateHistory(top);
+        updateSheetContext();
         return;
     }
 
