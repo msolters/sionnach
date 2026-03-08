@@ -71,6 +71,7 @@ let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
 let lastChroma = null;    // latest chromagram for setting matching
+let lastRawEnergy = null; // latest raw energy for noise detection in overlays
 let lastChromaNFrames = 0;
 let sheetLocked = false;        // user pinned the sheet music
 let lockTimeRemaining = 0;      // seconds of lock time left
@@ -379,6 +380,7 @@ async function handleWorkerResult(data) {
     lastNFrames = nFrames;
     lastChroma = chroma;
     lastChromaNFrames = nFrames;
+    lastRawEnergy = rawEnergy;
     drawChromagram(chroma, rawEnergy, nFrames);
     drawSilenceOverlay(rawEnergy, nFrames);
 
@@ -608,6 +610,16 @@ function drawWindowOverlay(nFrames) {
     }
 
     for (const region of merged) {
+        // Skip regions that are mostly noise (let the noise overlay show instead)
+        if (lastRawEnergy) {
+            let noisy = 0, total = 0;
+            for (let f = region.startFrame; f < region.endFrame && f < nFrames; f++) {
+                if (chromaFlatness(lastRawEnergy, nFrames, f) > 0.45) noisy++;
+                total++;
+            }
+            if (total > 0 && noisy / total > 0.7) continue;
+        }
+
         const x0 = Math.round((region.startFrame / nFrames) * w);
         const x1 = Math.round((region.endFrame / nFrames) * w);
         const rw = x1 - x0;
