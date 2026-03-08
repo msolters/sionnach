@@ -67,8 +67,6 @@ let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
 const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
 let listenRingDisplay = 0;       // smoothed display value (0-1), lerps toward target
 let currentConfidence = 0;       // 0-1 confidence score for ring display
-let lastRingTuneId = null;       // tracks top tune for stability detection
-let ringStability = 0;           // 0-1, grows when same tune stays on top, drops on change
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -355,8 +353,6 @@ async function handleWorkerResult(data) {
             lockCount = 0;
             sheetFetchId = null;
             currentConfidence = 0;
-            ringStability = 0;
-            lastRingTuneId = null;
             // Halve the rolling window so stale guesses fade when music returns
             if (recentProbs.length > 2) {
                 recentProbs = recentProbs.slice(-Math.ceil(recentProbs.length / 2));
@@ -487,10 +483,14 @@ async function handleWorkerResult(data) {
 
     const topProb = consensus[indices[0]];
 
-    // If confidence is below floor, keep last prediction visible but don't update
-    if (topProb < CONFIDENCE_FLOOR) {
-        // Don't clear — just hold whatever is currently showing
-    } else {
+    // Always update confidence from the consensus (drives the ring)
+    const topConsensusProb = consensus[indices[0]];
+    const secondProb = consensus[indices[1]] || 0;
+    const ratio = secondProb > 0 ? topConsensusProb / secondProb : (topConsensusProb > 0 ? 10 : 0);
+    currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
+
+    // Only update displayed predictions when above confidence floor
+    if (topProb >= CONFIDENCE_FLOOR) {
         const predictions = indices.slice(0, 10).map((idx, rank) => ({
             rank: rank + 1,
             prob: consensus[idx],
@@ -726,23 +726,6 @@ function renderResults(predictions) {
 
     const top = predictions[0];
     const topType = TYPE_INFO[top.type];
-
-    // Update confidence: combines dominance (how much #1 beats #2)
-    // with stability (how consistently the same tune stays on top).
-    const second = predictions.length > 1 ? predictions[1].prob : 0;
-    const ratio = second > 0 ? top.prob / second : (top.prob > 0 ? 10 : 0);
-    const dominance = Math.min(Math.max((ratio - 1) / 2, 0), 1);
-
-    // Stability: grows when same tune stays on top, halves on change
-    if (top.id === lastRingTuneId) {
-        ringStability = Math.min(ringStability + 0.15, 1);
-    } else {
-        ringStability *= 0.5;
-        lastRingTuneId = top.id;
-    }
-
-    // Confidence = dominance * stability — both must be high
-    currentConfidence = dominance * ringStability;
 
     // Hero card
     $('topTuneName').textContent = top.name;
