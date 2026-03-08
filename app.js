@@ -66,6 +66,7 @@ const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
 const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
 let listenRingDisplay = 0;       // smoothed display value (0-1), lerps toward target
+let currentConfidence = 0;       // 0-1 confidence score for ring display
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -248,26 +249,18 @@ function updateTimerAndLevel() {
 
 // ---- Listening progress ring ----
 //
-// Simple two-phase ring:
-//   0–60%: audio buffer filling toward MIN_AUDIO_SEC (music detected)
-//   60–100%: tune identified and locked on
-// Ring hits 100% as soon as we have enough audio AND a tune is locked.
+// Ring represents confidence that we've identified the right tune.
+// Driven by dominance ratio: how much #1 stands out from #2.
+// Ratio 1 (tied) = 0%, ratio >= 3 (3x dominant) = 100%.
 
 function updateListenRing() {
     const circumference = 213.6;
     const fill = $('listenRingFill');
     const label = $('listenRingLabel');
 
-    // Phase 1 (0–60%): are we in a music session?
-    // Uses musicActive (set by silence detection in handleWorkerResult)
-    // rather than per-tick loudness, so brief quiet spots between notes
-    // don't cause the ring to drain mid-tune.
-    const bufferPct = musicActive ? 0.6 : 0;
+    // Target: confidence when music is active, 0 when silent
+    const targetPct = musicActive ? currentConfidence : 0;
 
-    // Phase 2 (60–100%): tune identified?
-    const lockPct = lockedTuneId ? 0.4 : Math.min(lockCount / LOCK_THRESHOLD, 1) * 0.2;
-
-    const targetPct = Math.min(bufferPct + lockPct, 1);
     const draining = targetPct < listenRingDisplay - 0.01;
     const speed = draining ? 0.08 : 0.15;
     listenRingDisplay += (targetPct - listenRingDisplay) * speed;
@@ -290,15 +283,21 @@ function updateListenRing() {
 
     if (pct >= 0.99) {
         label.textContent = 'Current Tune';
+        // Auto-scroll to sheet music if user has been idle 30s+
         if (lockedTuneId && !autoScrollTimer) {
-            autoScrollTimer = true;
-            const panel = $('sheetPanel');
-            if (panel.classList.contains('open') && window.scrollY <= 150) {
-                panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            const idleMs = Date.now() - lastInteractionTime;
+            if (idleMs >= IDLE_THRESHOLD) {
+                autoScrollTimer = true;
+                const panel = $('sheetPanel');
+                if (panel.classList.contains('open')) {
+                    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
             }
         }
-    } else if (musicActive) {
+    } else if (pct >= 0.3) {
         label.textContent = 'Identifying...';
+    } else if (musicActive) {
+        label.textContent = 'Listening...';
     } else {
         label.textContent = 'Play a tune...';
     }
@@ -353,6 +352,7 @@ async function handleWorkerResult(data) {
             musicActive = false;
             lockCount = 0;
             sheetFetchId = null;
+            currentConfidence = 0;
             // Halve the rolling window so stale guesses fade when music returns
             if (recentProbs.length > 2) {
                 recentProbs = recentProbs.slice(-Math.ceil(recentProbs.length / 2));
@@ -723,6 +723,12 @@ function renderResults(predictions) {
     const top = predictions[0];
     const topType = TYPE_INFO[top.type];
 
+    // Update confidence: how dominant is #1 vs #2?
+    // Ratio of 1 = no dominance (0%), ratio >= 3 = high confidence (100%)
+    const second = predictions.length > 1 ? predictions[1].prob : 0;
+    const ratio = second > 0 ? top.prob / second : (top.prob > 0 ? 10 : 0);
+    currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
+
     // Hero card
     $('topTuneName').textContent = top.name;
     $('topTuneType').textContent = topType ? topType.label : (top.type || '');
@@ -805,6 +811,7 @@ function updateLockOn(top) {
 function loadSheetForTune(tuneId) {
     if (lockedTuneId === tuneId) return;
     lockedTuneId = tuneId;
+    autoScrollTimer = null; // allow auto-scroll for this new tune
 
     // Look up settings from our local tune index (dominant key only)
     const entry = tuneById[tuneId];
