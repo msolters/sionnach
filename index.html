@@ -462,9 +462,9 @@ canvas { display: block; border-radius: 6px; }
         width: 100%; position: static;
         max-height: none; order: -1;
     }
-    .preds-card { max-height: 200px; }
+    .preds-card { max-height: 280px; }
     .preds-list {
-        max-height: 160px;
+        max-height: 240px;
         display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 12px;
     }
     .pred-row { border-left-color: #2a3528; }
@@ -519,8 +519,10 @@ canvas { display: block; border-radius: 6px; }
 
     /* Predictions */
     .preds-card { padding: 10px 12px; border-radius: 8px; }
+    .preds-card { max-height: none; }
+    .preds-list { max-height: 200px; grid-template-columns: 1fr; }
     .pred-row { padding: 6px 8px; }
-    .pred-name { font-size: 13px; }
+    .pred-name { font-size: 13px; white-space: normal; }
 
     /* History */
     .history-card { padding: 10px 8px; margin-bottom: 8px; border-radius: 8px; }
