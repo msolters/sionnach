@@ -279,6 +279,8 @@ function updateListenRing() {
         } else {
             label.textContent = 'Identifying...';
         }
+        // Ring just filled — trigger autoscroll if a tune is loaded
+        if (lockedTuneId && !autoScrollTimer) scheduleAutoScroll();
     } else if (isPlaying) {
         fill.className = 'listen-ring-fill';
         label.textContent = 'Keep playing...';
