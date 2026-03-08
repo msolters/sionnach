@@ -308,12 +308,18 @@ function updateListenRing() {
     listenRingDisplay += (targetPct - listenRingDisplay) * speed;
     if (Math.abs(targetPct - listenRingDisplay) < 0.005) listenRingDisplay = targetPct;
     const pct = listenRingDisplay;
-    fill.style.strokeDashoffset = circumference * (1 - pct);
+    const offset = circumference * (1 - pct);
+    const isDraining = draining && pct > 0 && pct < 1;
+    const isReady = pct >= 1;
+    fill.style.strokeDashoffset = offset;
+    fill.classList.toggle('draining', isDraining);
+    fill.classList.toggle('ready', isReady);
 
-    // Color: amber when draining, bright green when full, default green otherwise
-    // Use classList so CSS transition on stroke handles the animation
-    fill.classList.toggle('draining', draining && pct > 0 && pct < 1);
-    fill.classList.toggle('ready', pct >= 1);
+    // Mirror to sheet music header ring
+    const sf = $('sheetRingFill');
+    sf.style.strokeDashoffset = offset;
+    sf.classList.toggle('draining', isDraining);
+    sf.classList.toggle('ready', isReady);
 
     if (pct >= 1) {
         label.textContent = 'Current Tune';

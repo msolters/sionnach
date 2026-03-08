@@ -281,6 +281,7 @@ canvas { display: block; border-radius: 6px; }
 }
 .listen-ring-fill.draining { stroke: #c4973a; }
 .listen-ring-fill.ready { stroke: #6aaa3d; }
+.sheet-ring { width: 22px; height: 22px; flex-shrink: 0; }
 
 /* ---- Session history (main column) ---- */
 .history-card {
@@ -588,6 +589,10 @@ canvas { display: block; border-radius: 6px; }
                 <div class="sheet-panel" id="sheetPanel">
                     <div class="sheet-panel-inner">
                         <div class="sheet-header">
+                            <svg class="listen-ring-svg sheet-ring" id="sheetRing" viewBox="0 0 80 80">
+                                <circle class="listen-ring-bg" cx="40" cy="40" r="34" />
+                                <circle class="listen-ring-fill" id="sheetRingFill" cx="40" cy="40" r="34" />
+                            </svg>
                             <span class="sheet-lock-icon" id="sheetLockIcon">&#x1F513;</span>
                             <h3>Sheet Music</h3>
                             <span class="sheet-context" id="sheetContext"></span>
