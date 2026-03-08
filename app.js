@@ -337,15 +337,14 @@ async function handleWorkerResult(data) {
 
     const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
 
-    // Detect silence/noise: count what fraction of frames are "noisy" (spectrally flat).
-    // This catches both actual silence AND ambient noise/chatter, which have energy
-    // but no melodic content. Much more reliable than instantaneous RMS level.
-    const FLATNESS_THRESH = 0.45;
+    // Detect silence/noise: true silence (low RMS) OR mostly noise (spectrally flat).
+    const isSilent = inputLevel < 0.005;
     let noiseFrames = 0;
     for (let f = 0; f < nFrames; f++) {
-        if (chromaFlatness(rawEnergy, nFrames, f) > FLATNESS_THRESH) noiseFrames++;
+        if (chromaFlatness(rawEnergy, nFrames, f) > 0.45) noiseFrames++;
     }
-    const isQuiet = noiseFrames > nFrames * 0.7; // 70%+ noise frames = no music
+    const isNoise = noiseFrames > nFrames * 0.9; // 90%+ noise = no melodic content
+    const isQuiet = isSilent || isNoise;
     if (isQuiet) {
         silenceCount++;
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
