@@ -146,11 +146,12 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .sheet-setting-label { font-size: 11px; color: #7a9470; min-width: 80px; text-align: center; }
 .sheet-lock-icon {
-    font-size: 13px; margin-right: 4px; flex-shrink: 0;
+    font-size: 12px; margin-right: 4px; flex-shrink: 0;
     color: #7a9470; transition: color 0.15s;
+    font-family: 'SF Mono', 'Cascadia Code', monospace;
+    min-width: 20px;
 }
-.sheet-lock-icon.locked { color: #e8944a; }
-.sheet-lock-icon.countdown { color: #e8a060; }
+.sheet-lock-icon.locked { color: #e8944a; font-weight: 600; }
 .sheet-render.locked {
     border-color: #e8944a;
     animation: sheetBuzz 0.3s ease;
