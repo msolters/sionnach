@@ -1006,7 +1006,7 @@ function renderSheet() {
     const body = setting.abc.split('\n').filter(l => !l.match(/^[TMLKXWRS]:/)).join('\n');
     const tuneName = entry?.name || '';
     const typeLabel = typeInfo?.label || '';
-    const abc = `X:1\nT:${tuneName}\nR:${typeLabel}\nM:${meter}\nL:${noteLen}\nK:${kField}\n${body}`;
+    const abc = `X:1\nM:${meter}\nL:${noteLen}\nK:${kField}\n${body}`;
 
     ABCJS.renderAbc('sheetRender', abc, {
         responsive: 'resize',
@@ -1106,7 +1106,7 @@ function renderSheetInto(elementId, tuneId) {
     const meter = typeInfo?.timeSig || '4/4';
     const kField = abcKeyField(keyStr);
     const body = setting.abc.split('\n').filter(l => !l.match(/^[TMLKXWRS]:/)).join('\n');
-    const abc = `X:1\nT:${entry.name}\nR:${typeInfo?.label || ''}\nM:${meter}\nL:1/8\nK:${kField}\n${body}`;
+    const abc = `X:1\nM:${meter}\nL:1/8\nK:${kField}\n${body}`;
     ABCJS.renderAbc(elementId, abc, {
         responsive: 'resize', staffwidth: 600,
         paddingtop: 10, paddingbottom: 10, scale: 1.2,
