@@ -307,28 +307,29 @@ canvas { display: block; border-radius: 6px; }
 .history-list::-webkit-scrollbar-thumb { background: #3a4a35; border-radius: 2px; }
 
 .history-entry {
-    padding: 8px 0; border-bottom: 1px solid #2a3528;
-    animation: fadeIn 0.3s ease;
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 6px 8px; border-radius: 6px;
     cursor: pointer; transition: background 0.15s;
 }
-.history-entry:hover { background: #223020; margin: 0 -8px; padding: 8px; border-radius: 6px; }
-.history-entry:last-child { border-bottom: none; }
-.history-entry.current { background: #223020; margin: 0 -8px; padding: 8px; border-radius: 6px; border-bottom: none; }
+.history-entry:first-child { animation: fadeIn 0.3s ease; }
+.history-entry:hover { background: #223020; }
+.history-entry.current { background: #223020; }
 .history-entry.active-sheet { border-left: 3px solid #6aaa3d; padding-left: 5px; }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 
 .history-time {
-    font-size: 10px; color: #4a6340;
+    font-size: 10px; color: #4a6340; flex-shrink: 0;
     font-family: 'SF Mono', 'Cascadia Code', monospace;
 }
+.history-body { flex: 1; min-width: 0; }
 .history-name {
-    font-size: 13px; font-weight: 600; margin: 2px 0; color: #c8e0b0;
+    font-size: 13px; font-weight: 600; color: #c8e0b0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .history-meta {
     display: flex; align-items: center; gap: 8px;
-    font-size: 11px; color: #7a9470;
+    font-size: 11px; color: #7a9470; margin-top: 1px;
 }
 .history-type { color: #c4973a; font-weight: 500; text-transform: capitalize; }
 .history-conf { color: #6aaa3d; }

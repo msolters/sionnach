@@ -337,9 +337,15 @@ async function handleWorkerResult(data) {
 
     const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
 
-    // Detect silence: use instantaneous input level. SILENCE_CYCLES (5 consecutive
-    // quiet worker results = ~5 seconds) filters out brief inter-note quiet spots.
-    const isQuiet = inputLevel < 0.005;
+    // Detect silence/noise: count what fraction of frames are "noisy" (spectrally flat).
+    // This catches both actual silence AND ambient noise/chatter, which have energy
+    // but no melodic content. Much more reliable than instantaneous RMS level.
+    const FLATNESS_THRESH = 0.45;
+    let noiseFrames = 0;
+    for (let f = 0; f < nFrames; f++) {
+        if (chromaFlatness(rawEnergy, nFrames, f) > FLATNESS_THRESH) noiseFrames++;
+    }
+    const isQuiet = noiseFrames > nFrames * 0.7; // 70%+ noise frames = no music
     if (isQuiet) {
         silenceCount++;
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
@@ -777,12 +783,13 @@ function updateLockOn(top) {
     }
 
     if (top.id === lockedTuneId) {
-        // Same tune still locked — update confidence in history and context
+        // Same tune still locked — update confidence in place, no full re-render
         lockedTuneConf = top.prob;
         updateSheetContext(top);
         if (sessionHistory.length > 0 && sessionHistory[0].id === top.id) {
             sessionHistory[0].conf = top.prob;
-            renderHistory();
+            const confEl = $('historyList').querySelector('.history-entry .history-conf');
+            if (confEl) confEl.textContent = (top.prob * 100).toFixed(0) + '%';
         }
         return;
     }
@@ -1083,12 +1090,12 @@ function initHeroObserver() {
 function updateHistory(top) {
     if (!top || !top.id) return;
 
-    // Skip if same tune as last entry
+    // Skip if same tune as last entry — just update confidence in place
     if (lastTopTuneId === top.id) {
-        // Update confidence of current entry
         if (sessionHistory.length > 0) {
             sessionHistory[0].conf = top.prob;
-            renderHistory();
+            const confEl = $('historyList').querySelector('.history-entry .history-conf');
+            if (confEl) confEl.textContent = (top.prob * 100).toFixed(0) + '%';
         }
         return;
     }
@@ -1123,10 +1130,12 @@ function renderHistory() {
         const activeSheet = entry.id === lockedTuneId ? ' active-sheet' : '';
         return `<div class="history-entry${currentClass}${activeSheet}" data-tune-id="${entry.id}" data-tune-name="${entry.name}">
             <span class="history-time">${entry.time}</span>
-            <div class="history-name">${entry.name}</div>
-            <div class="history-meta">
-                <span class="history-type">${typeLabel}</span>
-                <span class="history-conf">${confPct}%</span>
+            <div class="history-body">
+                <div class="history-name">${entry.name}</div>
+                <div class="history-meta">
+                    <span class="history-type">${typeLabel}</span>
+                    <span class="history-conf">${confPct}%</span>
+                </div>
             </div>
         </div>`;
     }).join('');
