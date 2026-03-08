@@ -236,18 +236,27 @@ button:disabled { opacity: 0.4; cursor: default; }
     font-size: 11px; color: #c4973a; font-weight: 500; margin-left: 6px;
 }
 
-/* ---- Listening progress ring ---- */
+/* ---- Chromagram ---- */
+.viz-card {
+    background: #1a2418; border-radius: 12px; padding: 12px;
+    margin-bottom: 12px; position: relative; border: 1px solid #2a3528;
+}
+.viz-card h3 { font-size: 11px; color: #7a9470; margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
+.chroma-wrap { position: relative; }
+canvas { display: block; border-radius: 6px; }
+#chromaCanvas { height: 96px; width: 100%; }
+
+/* ---- Listening progress ring (overlaid on chromagram) ---- */
 .listen-ring {
-    display: flex; flex-direction: column; align-items: center;
-    gap: 8px; margin-bottom: 12px; padding: 12px 0;
-    transition: opacity 0.6s ease, max-height 0.6s ease;
-    max-height: 140px; overflow: hidden;
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    display: flex; align-items: center; gap: 6px;
+    pointer-events: none;
 }
 .listen-ring-svg {
-    width: 72px; height: 72px; transform: rotate(-90deg);
+    width: 40px; height: 40px; transform: rotate(-90deg); flex-shrink: 0;
 }
 .listen-ring-bg {
-    fill: none; stroke: #1a2418; stroke-width: 5;
+    fill: rgba(13, 26, 15, 0.6); stroke: rgba(42, 53, 40, 0.6); stroke-width: 5;
 }
 .listen-ring-fill {
     fill: none; stroke: #4c8c30; stroke-width: 5;
@@ -259,19 +268,13 @@ button:disabled { opacity: 0.4; cursor: default; }
 .listen-ring-fill.paused { stroke: #c4973a; }
 .listen-ring-fill.ready { stroke: #6aaa3d; }
 .listen-ring-label {
-    font-size: 12px; color: #7a9470; text-align: center;
+    font-size: 11px; color: rgba(122, 148, 112, 0.9);
+    white-space: nowrap; max-width: 120px;
+    overflow: hidden; text-overflow: ellipsis;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
     transition: color 0.3s ease;
 }
-.listen-ring-label.active { color: #c8e0b0; }
-
-/* ---- Chromagram ---- */
-.viz-card {
-    background: #1a2418; border-radius: 12px; padding: 12px;
-    margin-bottom: 12px; position: relative; border: 1px solid #2a3528;
-}
-.viz-card h3 { font-size: 11px; color: #7a9470; margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
-canvas { display: block; border-radius: 6px; }
-#chromaCanvas { height: 96px; width: 100%; }
+.listen-ring-label.active { color: rgba(200, 224, 176, 0.95); }
 
 /* ---- Session history (main column) ---- */
 .history-card {
@@ -448,9 +451,8 @@ canvas { display: block; border-radius: 6px; }
     .search-card { margin-bottom: 8px; }
 
     /* Listen ring */
-    .listen-ring { padding: 8px 0; margin-bottom: 8px; }
-    .listen-ring-svg { width: 60px; height: 60px; }
-    .listen-ring-label { font-size: 11px; }
+    .listen-ring-svg { width: 32px; height: 32px; }
+    .listen-ring-label { font-size: 10px; max-width: 80px; }
 
     /* Audio visualization */
     .level-meter { margin-bottom: 8px; }
@@ -526,19 +528,19 @@ canvas { display: block; border-radius: 6px; }
             <div class="level-meter-fill" id="levelFill"></div>
         </div>
 
-        <!-- Listening progress ring -->
-        <div class="listen-ring" id="listenRing">
-            <svg class="listen-ring-svg" viewBox="0 0 80 80">
-                <circle class="listen-ring-bg" cx="40" cy="40" r="34" />
-                <circle class="listen-ring-fill" id="listenRingFill" cx="40" cy="40" r="34" />
-            </svg>
-            <span class="listen-ring-label" id="listenRingLabel">Play a tune...</span>
-        </div>
-
         <!-- Chromagram -->
         <div class="viz-card">
             <h3>Live Chromagram</h3>
-            <canvas id="chromaCanvas" width="800" height="96"></canvas>
+            <div class="chroma-wrap">
+                <canvas id="chromaCanvas" width="800" height="96"></canvas>
+                <div class="listen-ring" id="listenRing">
+                    <svg class="listen-ring-svg" viewBox="0 0 80 80">
+                        <circle class="listen-ring-bg" cx="40" cy="40" r="34" />
+                        <circle class="listen-ring-fill" id="listenRingFill" cx="40" cy="40" r="34" />
+                    </svg>
+                    <span class="listen-ring-label" id="listenRingLabel">Play a tune...</span>
+                </div>
+            </div>
         </div>
 
         <div class="layout">
