@@ -1352,6 +1352,10 @@ async function init() {
     $('nextSetting').addEventListener('click', nextSettingClick);
     $('prevSettingB').addEventListener('click', prevSettingClick);
     $('nextSettingB').addEventListener('click', nextSettingClick);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') prevSettingClick();
+        else if (e.key === 'ArrowRight') nextSettingClick();
+    });
 
     // Mic toggle
     $('micToggle').addEventListener('click', () => {
