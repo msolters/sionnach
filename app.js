@@ -252,7 +252,11 @@ function updateListenRing() {
         listenProgress = Math.min(listenProgress + 0.1, LISTEN_TARGET);
     } else {
         listenPauseCount += 0.1;
-        if (listenPauseCount > LISTEN_PAUSE_TOLERANCE && listenProgress > 0) {
+        if (listenPauseCount <= LISTEN_PAUSE_TOLERANCE && listenProgress > 0) {
+            // Brief pause (rest, breath) — keep filling at half speed
+            listenProgress = Math.min(listenProgress + 0.05, LISTEN_TARGET);
+        } else if (listenProgress > 0) {
+            // Extended silence — drain
             listenProgress = Math.max(0, listenProgress - 0.2);
         }
     }
