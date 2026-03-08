@@ -304,7 +304,8 @@ function updateListenRing() {
 
     const targetPct = Math.min(bufferPct + lockPct + stabilityPct, 1);
     // Smooth toward target: fast when increasing, moderate when decreasing
-    const speed = targetPct > listenRingDisplay ? 0.15 : 0.08;
+    const draining = targetPct < listenRingDisplay - 0.005;
+    const speed = draining ? 0.08 : 0.15;
     listenRingDisplay += (targetPct - listenRingDisplay) * speed;
     // Snap to target when very close to avoid endless asymptote
     if (Math.abs(targetPct - listenRingDisplay) < 0.005) listenRingDisplay = targetPct;
@@ -322,9 +323,9 @@ function updateListenRing() {
                 panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
-    } else if (!isPlaying && pct > 0 && pct < 0.5) {
+    } else if (draining && pct > 0) {
         fill.className = 'listen-ring-fill paused';
-        label.textContent = 'Keep playing...';
+        label.textContent = pct >= 0.5 ? 'Identifying...' : 'Keep playing...';
     } else if (pct >= 0.5) {
         fill.className = 'listen-ring-fill';
         label.textContent = 'Identifying...';
