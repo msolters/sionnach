@@ -66,9 +66,6 @@ let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
 const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
-let listenRingTuneId = null;     // tune ID the ring is tracking
-let listenStabilityCount = 0;    // ticks after lock-on for stability verification
-const STABILITY_TICKS = 10;      // ~1s of stability at 100ms ticks
 let listenRingDisplay = 0;       // smoothed display value (0-1), lerps toward target
 let listenMusicSec = 0;          // seconds of actual music detected (not ambient noise)
 let listenPauseCount = 0;        // consecutive quiet ticks for pause tolerance
@@ -255,10 +252,10 @@ function updateTimerAndLevel() {
 
 // ---- Listening progress ring ----
 //
-// The ring reflects actual pipeline state:
-//   0–50%: audio buffer filling toward MIN_AUDIO_SEC
-//   50–80%: lockCount progressing toward LOCK_THRESHOLD (prediction consistency)
-//   80–100%: stability buffer after lock-on (~3s to verify)
+// Simple two-phase ring:
+//   0–60%: audio buffer filling toward MIN_AUDIO_SEC (music detected)
+//   60–100%: tune identified and locked on
+// Ring hits 100% as soon as we have enough audio AND a tune is locked.
 
 function updateListenRing() {
     const circumference = 213.6;
@@ -267,39 +264,24 @@ function updateListenRing() {
     const MUSIC_THRESHOLD = 0.02;
     const isPlaying = inputLevel >= MUSIC_THRESHOLD;
 
-    // Phase 1: music time accumulated (0–50%)
-    // Only count time when actual music is detected, not ambient noise
+    // Phase 1: music time accumulated (0–60%)
     if (isPlaying) {
         listenPauseCount = 0;
         listenMusicSec = Math.min(listenMusicSec + 0.1, MIN_AUDIO_SEC);
     } else {
         listenPauseCount += 0.1;
         if (listenPauseCount <= LISTEN_PAUSE_TOLERANCE) {
-            // Brief pause — keep counting at half speed
             listenMusicSec = Math.min(listenMusicSec + 0.05, MIN_AUDIO_SEC);
         } else if (listenMusicSec > 0) {
-            // Extended silence — drain
             listenMusicSec = Math.max(0, listenMusicSec - 0.15);
         }
     }
-    const bufferPct = Math.min(listenMusicSec / MIN_AUDIO_SEC, 1) * 0.5;
+    const bufferPct = Math.min(listenMusicSec / MIN_AUDIO_SEC, 1) * 0.6;
 
-    // Phase 2: prediction consistency (50–80%)
-    const lockPct = Math.min(lockCount / LOCK_THRESHOLD, 1) * 0.3;
+    // Phase 2: tune locked (60–100%)
+    const lockPct = lockedTuneId ? 0.4 : Math.min(lockCount / LOCK_THRESHOLD, 1) * 0.2;
 
-    // Phase 3: stability after lock-on (80–100%)
-    // Once a tune is locked, stability fills steadily while music plays
-    if (lockedTuneId && musicActive) {
-        listenStabilityCount = Math.min(listenStabilityCount + 1, STABILITY_TICKS);
-    }
-    const stabilityPct = lockedTuneId ? (listenStabilityCount / STABILITY_TICKS) * 0.2 : 0;
-
-    // If music stopped, drain stability
-    if (!musicActive && listenStabilityCount > 0) {
-        listenStabilityCount = Math.max(0, listenStabilityCount - 2);
-    }
-
-    const targetPct = Math.min(bufferPct + lockPct + stabilityPct, 1);
+    const targetPct = Math.min(bufferPct + lockPct, 1);
     const draining = targetPct < listenRingDisplay - 0.01;
     const speed = draining ? 0.08 : 0.15;
     listenRingDisplay += (targetPct - listenRingDisplay) * speed;
@@ -307,12 +289,12 @@ function updateListenRing() {
     const pct = listenRingDisplay;
     const offset = circumference * (1 - pct);
     const isDraining = draining && pct > 0 && pct < 1;
-    const isReady = pct >= 1;
+    const isReady = pct >= 0.99;
     fill.style.strokeDashoffset = offset;
     fill.classList.toggle('draining', isDraining);
     fill.classList.toggle('ready', isReady);
 
-    // Mirror to sheet music header ring (may not exist yet)
+    // Mirror to sheet music header ring
     const sf = $('sheetRingFill');
     if (sf) {
         sf.style.strokeDashoffset = offset;
@@ -320,7 +302,7 @@ function updateListenRing() {
         sf.classList.toggle('ready', isReady);
     }
 
-    if (pct >= 1) {
+    if (pct >= 0.99) {
         label.textContent = 'Current Tune';
         if (lockedTuneId && !autoScrollTimer) {
             autoScrollTimer = true;
@@ -335,17 +317,6 @@ function updateListenRing() {
         label.textContent = 'Keep playing...';
     } else {
         label.textContent = 'Play a tune...';
-    }
-}
-
-// Called from renderResults when the top prediction changes
-function onTopPredictionChanged(newTopId) {
-    if (newTopId !== listenRingTuneId) {
-        listenRingTuneId = newTopId;
-        // Decay stability rather than resetting — brief top-1 flickers
-        // shouldn't destroy progress with 5000 classes
-        listenStabilityCount = Math.max(0, listenStabilityCount - 3);
-        autoScrollTimer = null;
     }
 }
 
@@ -388,12 +359,11 @@ async function handleWorkerResult(data) {
     if (isQuiet) {
         silenceCount++;
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
-            // Transition from music to silence — freeze display, keep sheet music
+            // Transition from music to silence — freeze display, keep last prediction showing
             musicActive = false;
             lockCount = 0;
             sheetFetchId = null;
-            clearHeroTune();
-            // Halve the rolling window so stale guesses fade
+            // Halve the rolling window so stale guesses fade when music returns
             if (recentProbs.length > 2) {
                 recentProbs = recentProbs.slice(-Math.ceil(recentProbs.length / 2));
             }
@@ -405,8 +375,7 @@ async function handleWorkerResult(data) {
             musicActive = true;
             lockCount = 0;
             sheetFetchId = null;
-            recentProbs = [];  // reset so stale predictions don't linger
-            clearHeroTune('Listening...');
+            recentProbs = [];
         }
     }
 
@@ -763,9 +732,6 @@ function renderResults(predictions) {
 
     const top = predictions[0];
     const topType = TYPE_INFO[top.type];
-
-    // Update listen ring when top prediction shifts
-    onTopPredictionChanged(top.id);
 
     // Hero card
     $('topTuneName').textContent = top.name;
