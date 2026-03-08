@@ -392,6 +392,7 @@ async function handleWorkerResult(data) {
             musicActive = false;
             lockCount = 0;
             sheetFetchId = null;
+            $('topTuneName').textContent = '';
             // Decay smoothed predictions so stale guesses fade
             if (smoothedProbs) {
                 for (let i = 0; i < smoothedProbs.length; i++) smoothedProbs[i] *= 0.8;
@@ -405,6 +406,7 @@ async function handleWorkerResult(data) {
             musicActive = true;
             lockCount = 0;
             sheetFetchId = null;
+            $('topTuneName').textContent = 'Listening...';
         }
     }
 
