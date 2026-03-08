@@ -64,6 +64,8 @@ const SILENCE_THRESHOLD = 0.005;  // RMS below this = silence/noise
 const SILENCE_CYCLES = 2;  // cycles of quiet before declaring "stopped"
 let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
+let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
+const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -1082,7 +1084,7 @@ function scheduleAutoScroll() {
     if (autoScrollTimer) clearTimeout(autoScrollTimer);
     autoScrollTimer = setTimeout(() => {
         autoScrollTimer = null;
-        // Only scroll if user is still near the top of the page
+        if (Date.now() - lastInteractionTime < IDLE_THRESHOLD) return;
         if (window.scrollY > 150) return;
         const panel = $('sheetPanel');
         if (!panel.classList.contains('open')) return;
@@ -1298,6 +1300,13 @@ async function init() {
 
     startRecording();
     initHeroObserver();
+
+    // Track user interaction for autoscroll gating
+    const markActive = () => { lastInteractionTime = Date.now(); };
+    for (const evt of ['pointerdown', 'scroll', 'keydown']) {
+        document.addEventListener(evt, markActive, { passive: true });
+    }
+    markActive();  // user just pressed Get Started
     $('prevSetting').addEventListener('click', () => {
         if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); }
     });
