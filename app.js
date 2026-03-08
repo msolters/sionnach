@@ -70,6 +70,9 @@ let listenRingTuneId = null;     // tune ID the ring is tracking
 let listenStabilityCount = 0;    // ticks after lock-on for stability verification
 const STABILITY_TICKS = 30;      // ~3s of stability at 100ms ticks
 let listenRingDisplay = 0;       // smoothed display value (0-1), lerps toward target
+let listenMusicSec = 0;          // seconds of actual music detected (not ambient noise)
+let listenPauseCount = 0;        // consecutive quiet ticks for pause tolerance
+const LISTEN_PAUSE_TOLERANCE = 3; // seconds of pause before draining
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -256,9 +259,22 @@ function updateListenRing() {
     const MUSIC_THRESHOLD = 0.02;
     const isPlaying = inputLevel >= MUSIC_THRESHOLD;
 
-    // Phase 1: buffer fullness (0–50%)
-    const bufferSec = totalSamples / SAMPLE_RATE;
-    const bufferPct = Math.min(bufferSec / MIN_AUDIO_SEC, 1) * 0.5;
+    // Phase 1: music time accumulated (0–50%)
+    // Only count time when actual music is detected, not ambient noise
+    if (isPlaying) {
+        listenPauseCount = 0;
+        listenMusicSec = Math.min(listenMusicSec + 0.1, MIN_AUDIO_SEC);
+    } else {
+        listenPauseCount += 0.1;
+        if (listenPauseCount <= LISTEN_PAUSE_TOLERANCE) {
+            // Brief pause — keep counting at half speed
+            listenMusicSec = Math.min(listenMusicSec + 0.05, MIN_AUDIO_SEC);
+        } else if (listenMusicSec > 0) {
+            // Extended silence — drain
+            listenMusicSec = Math.max(0, listenMusicSec - 0.15);
+        }
+    }
+    const bufferPct = Math.min(listenMusicSec / MIN_AUDIO_SEC, 1) * 0.5;
 
     // Phase 2: prediction consistency (50–80%)
     const lockPct = Math.min(lockCount / LOCK_THRESHOLD, 1) * 0.3;
@@ -324,6 +340,8 @@ function onTopPredictionChanged(newTopId) {
     if (newTopId !== listenRingTuneId) {
         listenRingTuneId = newTopId;
         listenStabilityCount = 0;
+        listenMusicSec = 0;
+        listenPauseCount = 0;
         // Reset autoscroll so it can re-trigger for the new tune
         autoScrollTimer = null;
     }
