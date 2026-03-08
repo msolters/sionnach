@@ -66,6 +66,11 @@ let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
 const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
+let listenProgress = 0;          // seconds of music detected for progress ring
+let listenPauseCount = 0;        // consecutive quiet ticks (for brief pause tolerance)
+let listenRingDone = false;      // true once first tune locked on
+const LISTEN_TARGET = 6;         // seconds of playing needed for reliable ID
+const LISTEN_PAUSE_TOLERANCE = 3; // allow up to 3s pause without resetting
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -234,6 +239,56 @@ function updateTimerAndLevel() {
     } else if (!workerBusy) {
         $('statusText').textContent = `Analysing last ${Math.min(secCaptured, MAX_AUDIO_SEC)}s`;
     }
+
+    updateListenRing();
+}
+
+// ---- Listening progress ring ----
+
+function updateListenRing() {
+    if (listenRingDone) return;
+
+    const isPlaying = inputLevel >= SILENCE_THRESHOLD;
+    if (isPlaying) {
+        listenPauseCount = 0;
+        listenProgress = Math.min(listenProgress + 0.1, LISTEN_TARGET); // +0.1s per 100ms tick
+    } else {
+        listenPauseCount += 0.1;
+        if (listenPauseCount > LISTEN_PAUSE_TOLERANCE && listenProgress > 0) {
+            // Extended silence — reset
+            listenProgress = Math.max(0, listenProgress - 0.2); // drain faster than fill
+        }
+    }
+
+    const pct = Math.min(listenProgress / LISTEN_TARGET, 1);
+    const circumference = 213.6; // 2 * PI * 34
+    const fill = $('listenRingFill');
+    const label = $('listenRingLabel');
+    fill.style.strokeDashoffset = circumference * (1 - pct);
+
+    if (pct >= 1) {
+        fill.className = 'listen-ring-fill ready';
+        label.textContent = 'Identifying...';
+        label.className = 'listen-ring-label active';
+    } else if (isPlaying) {
+        fill.className = 'listen-ring-fill';
+        label.textContent = 'Keep playing...';
+        label.className = 'listen-ring-label active';
+    } else if (listenProgress > 0) {
+        fill.className = 'listen-ring-fill paused';
+        label.textContent = 'Keep playing...';
+        label.className = 'listen-ring-label';
+    } else {
+        fill.className = 'listen-ring-fill';
+        label.textContent = 'Play a tune...';
+        label.className = 'listen-ring-label';
+    }
+}
+
+function dismissListenRing() {
+    if (listenRingDone) return;
+    listenRingDone = true;
+    $('listenRing').classList.add('done');
 }
 
 // ---- Analysis pipeline (Worker + ONNX) ----
@@ -732,6 +787,7 @@ function updateLockOn(top) {
 function loadSheetForTune(tuneId) {
     if (lockedTuneId === tuneId) return;
     lockedTuneId = tuneId;
+    dismissListenRing();
 
     // Look up settings from our local tune index (dominant key only)
     const entry = tuneById[tuneId];
