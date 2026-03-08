@@ -66,11 +66,9 @@ let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
 const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
-let listenProgress = 0;          // seconds of music detected for progress ring
-let listenPauseCount = 0;        // consecutive quiet ticks (for brief pause tolerance)
 let listenRingTuneId = null;     // tune ID the ring is tracking
-const LISTEN_TARGET = 12;        // seconds of consistent playing for reliable ID
-const LISTEN_PAUSE_TOLERANCE = 3; // allow up to 3s pause without resetting
+let listenStabilityCount = 0;    // ticks after lock-on for stability verification
+const STABILITY_TICKS = 30;      // ~3s of stability at 100ms ticks
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -244,55 +242,65 @@ function updateTimerAndLevel() {
 }
 
 // ---- Listening progress ring ----
+//
+// The ring reflects actual pipeline state:
+//   0–50%: audio buffer filling toward MIN_AUDIO_SEC
+//   50–80%: lockCount progressing toward LOCK_THRESHOLD (prediction consistency)
+//   80–100%: stability buffer after lock-on (~3s to verify)
 
 function updateListenRing() {
-    // Use a higher threshold than silence detection — we want "music playing"
-    // not just "any sound." ~-35dB RMS is a reasonable floor for actual music.
-    const MUSIC_THRESHOLD = 0.02;
-    const isPlaying = inputLevel >= MUSIC_THRESHOLD;
-    if (isPlaying) {
-        listenPauseCount = 0;
-        listenProgress = Math.min(listenProgress + 0.1, LISTEN_TARGET);
-    } else {
-        listenPauseCount += 0.1;
-        if (listenPauseCount <= LISTEN_PAUSE_TOLERANCE && listenProgress > 0) {
-            // Brief pause (rest, breath) — keep filling at half speed
-            listenProgress = Math.min(listenProgress + 0.05, LISTEN_TARGET);
-        } else if (listenProgress > 0) {
-            // Extended silence — drain
-            listenProgress = Math.max(0, listenProgress - 0.2);
-        }
-    }
-
-    const pct = Math.min(listenProgress / LISTEN_TARGET, 1);
-    const circumference = 213.6; // 2 * PI * 34
+    const circumference = 213.6;
     const fill = $('listenRingFill');
     const label = $('listenRingLabel');
-    fill.style.strokeDashoffset = circumference * (1 - pct);
+    const MUSIC_THRESHOLD = 0.02;
+    const isPlaying = inputLevel >= MUSIC_THRESHOLD;
 
-    const isPaused = !isPlaying && listenPauseCount > 0 && listenProgress > 0;
+    // Phase 1: buffer fullness (0–50%)
+    const bufferSec = totalSamples / SAMPLE_RATE;
+    const bufferPct = Math.min(bufferSec / MIN_AUDIO_SEC, 1) * 0.5;
+
+    // Phase 2: prediction consistency (50–80%)
+    const lockPct = Math.min(lockCount / LOCK_THRESHOLD, 1) * 0.3;
+
+    // Phase 3: stability after lock-on (80–100%)
+    if (lockedTuneId && lockedTuneId === listenRingTuneId) {
+        listenStabilityCount = Math.min(listenStabilityCount + 1, STABILITY_TICKS);
+    } else if (lockedTuneId) {
+        // New tune locked on — reset stability
+        listenRingTuneId = lockedTuneId;
+        listenStabilityCount = 0;
+    }
+    const stabilityPct = lockedTuneId ? (listenStabilityCount / STABILITY_TICKS) * 0.2 : 0;
+
+    // If music stopped, drain stability
+    if (!musicActive && listenStabilityCount > 0) {
+        listenStabilityCount = Math.max(0, listenStabilityCount - 2);
+    }
+
+    const pct = Math.min(bufferPct + lockPct + stabilityPct, 1);
+    fill.style.strokeDashoffset = circumference * (1 - pct);
 
     if (pct >= 1) {
         fill.className = 'listen-ring-fill ready';
         label.className = 'listen-ring-label active';
-        if (listenRingTuneId) {
-            const entry = tuneById[listenRingTuneId];
-            label.textContent = entry ? entry.name : 'Identifying...';
-        } else {
-            label.textContent = 'Identifying...';
-        }
-        // Ring just filled — scroll to sheet music immediately
+        const entry = lockedTuneId ? tuneById[lockedTuneId] : null;
+        label.textContent = entry ? entry.name : 'Identifying...';
+        // Scroll to sheet music immediately
         if (lockedTuneId && !autoScrollTimer) {
-            autoScrollTimer = true; // prevent re-trigger
+            autoScrollTimer = true;
             const panel = $('sheetPanel');
             if (panel.classList.contains('open') && window.scrollY <= 150) {
                 panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
-    } else if (isPaused) {
+    } else if (!isPlaying && pct > 0 && pct < 0.5) {
         fill.className = 'listen-ring-fill paused';
         label.textContent = 'Keep playing...';
         label.className = 'listen-ring-label';
+    } else if (pct >= 0.5) {
+        fill.className = 'listen-ring-fill';
+        label.className = 'listen-ring-label active';
+        label.textContent = 'Identifying...';
     } else if (isPlaying) {
         fill.className = 'listen-ring-fill';
         label.textContent = 'Keep playing...';
@@ -307,10 +315,10 @@ function updateListenRing() {
 // Called from renderResults when the top prediction changes
 function onTopPredictionChanged(newTopId) {
     if (newTopId !== listenRingTuneId) {
-        // Different tune taking the lead — reset progress
         listenRingTuneId = newTopId;
-        listenProgress = 0;
-        listenPauseCount = 0;
+        listenStabilityCount = 0;
+        // Reset autoscroll so it can re-trigger for the new tune
+        autoScrollTimer = null;
     }
 }
 
