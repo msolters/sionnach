@@ -25,11 +25,6 @@ header p {
 }
 header p.fading { opacity: 0; }
 
-/* ---- Controls bar ---- */
-.controls {
-    display: flex; align-items: center; gap: 8px;
-    margin-bottom: 8px;
-}
 button {
     padding: 8px 18px; border: none; border-radius: 8px;
     font-size: 14px; font-weight: 600; cursor: pointer;
@@ -37,22 +32,29 @@ button {
 }
 button:hover:not(:disabled) { opacity: 0.85; }
 button:disabled { opacity: 0.4; cursor: default; }
-#statusText { color: #7a9470; font-size: 13px; flex: 1; min-width: 0; }
-#timer {
-    font-family: 'SF Mono', 'Cascadia Code', monospace;
-    font-size: 15px; color: #7a9470; min-width: 40px; text-align: right;
-}
-.recording #timer { color: #c45c3e; }
 
-/* ---- Level meter ---- */
+/* ---- Level meter + audio status (inside viz-card) ---- */
 .level-meter {
-    height: 4px; background: #1a2418; border-radius: 3px;
-    margin-bottom: 12px; overflow: hidden;
+    height: 3px; background: #0d1a0f; border-radius: 3px;
+    margin-top: 8px; overflow: hidden;
 }
 .level-meter-fill {
     height: 100%; width: 0%; border-radius: 3px;
     background: #4a6340; transition: width 0.1s linear;
 }
+.audio-status {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-top: 6px; font-size: 11px; color: #4a6340;
+}
+#audioDevice {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#timer {
+    font-family: 'SF Mono', 'Cascadia Code', monospace;
+    font-size: 11px; color: #4a6340; flex-shrink: 0;
+}
+.recording #timer { color: #c45c3e; }
 
 /* ---- Two-column layout ---- */
 .layout { display: flex; gap: 16px; align-items: flex-start; }
@@ -519,17 +521,8 @@ canvas { display: block; border-radius: 6px; }
             <div class="search-results hidden" id="searchResults"></div>
         </div>
 
-        <div class="controls hidden" id="controlsBar">
-            <span id="statusText">Listening...</span>
-            <span id="timer">0:00</span>
-        </div>
-        <div class="level-meter">
-            <div class="level-meter-fill" id="levelFill"></div>
-        </div>
-
-        <!-- Chromagram -->
+        <!-- Chromagram + audio status -->
         <div class="viz-card">
-            <h3>Live Chromagram</h3>
             <div class="chroma-wrap">
                 <canvas id="chromaCanvas" width="800" height="96"></canvas>
                 <div class="listen-ring" id="listenRing">
@@ -539,6 +532,13 @@ canvas { display: block; border-radius: 6px; }
                     </svg>
                     <span class="listen-ring-label" id="listenRingLabel">Play a tune...</span>
                 </div>
+            </div>
+            <div class="level-meter">
+                <div class="level-meter-fill" id="levelFill"></div>
+            </div>
+            <div class="audio-status" id="audioStatus">
+                <span id="audioDevice"></span>
+                <span id="timer">0:00</span>
             </div>
         </div>
 

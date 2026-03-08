@@ -144,6 +144,8 @@ function getAudioBuffer() {
 async function startRecording() {
     try {
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const track = mediaStream.getAudioTracks()[0];
+        if (track) $('audioDevice').textContent = track.label || 'Unknown mic';
     } catch (e) {
         $('topTuneName').textContent = 'Mic denied — tap to retry';
         $('topTuneName').style.cursor = 'pointer';
@@ -187,7 +189,6 @@ async function startRecording() {
     silenceCount = 0;
     lockCount = 0;
     sheetFetchId = null;
-    $('controlsBar').classList.remove('hidden');
     $('topTuneName').textContent = 'Listening...';
     $('topTuneType').textContent = '';
     $('topTuneConf').textContent = '';
@@ -205,7 +206,6 @@ async function startRecording() {
         $('topTuneName').textContent = 'Error — tap to retry';
         $('topTuneName').style.cursor = 'pointer';
         $('topTuneName').onclick = () => { $('topTuneName').onclick = null; $('topTuneName').style.cursor = ''; startRecording(); };
-        $('controlsBar').classList.add('hidden');
     }
 }
 
@@ -219,9 +219,7 @@ function stopRecording() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
 
-    $('statusText').textContent = 'Stopped';
     $('topTuneName').textContent = 'Stopped';
-    $('controlsBar').classList.add('hidden');
     document.body.classList.remove('recording');
 
     requestAnalysis();
@@ -239,13 +237,6 @@ function updateTimerAndLevel() {
     const norm = Math.min(Math.max((db + 60) / 55, 0), 1);
     $('levelFill').style.width = `${norm * 100}%`;
     $('levelFill').style.background = norm > 0.8 ? '#c45c3e' : norm > 0.1 ? '#4c8c30' : '#4a6340';
-
-    const secCaptured = Math.floor(totalSamples / SAMPLE_RATE);
-    if (secCaptured < MIN_AUDIO_SEC) {
-        $('statusText').textContent = `Capturing... need ${MIN_AUDIO_SEC - secCaptured}s more`;
-    } else if (!workerBusy) {
-        $('statusText').textContent = `Analysing last ${Math.min(secCaptured, MAX_AUDIO_SEC)}s`;
-    }
 
     updateListenRing();
 }
@@ -371,7 +362,6 @@ function requestAnalysis() {
     if (totalSamples < minSamples) return;
 
     workerBusy = true;
-    $('statusText').textContent = 'Processing audio...';
 
     const buffer = getAudioBuffer();
     dspWorker.postMessage(
@@ -400,7 +390,6 @@ async function handleWorkerResult(data) {
                 for (let i = 0; i < smoothedProbs.length; i++) smoothedProbs[i] *= 0.8;
             }
             if (sheetLocked) startSilenceUnlockTimer();
-            if (isRecording) $('statusText').textContent = 'Waiting for music...';
         }
     } else {
         silenceCount = 0;
@@ -548,7 +537,6 @@ async function handleWorkerResult(data) {
         renderResults(predictions);
         updateLockOn(predictions[0]);
     }
-    if (isRecording) $('statusText').textContent = `Analysing last ${MAX_AUDIO_SEC}s`;
 }
 
 // ---- UI: Chromagram ----
