@@ -409,6 +409,7 @@ async function handleWorkerResult(data) {
             musicActive = true;
             lockCount = 0;
             sheetFetchId = null;
+            smoothedProbs = null;  // reset so stale predictions don't linger
             $('topTuneName').textContent = 'Listening...';
         }
     }
@@ -1293,6 +1294,7 @@ function updateHistory(top) {
         id: top.id,
         conf: top.prob,
     });
+    if (sessionHistory.length > 100) sessionHistory.length = 100;
 
     renderHistory();
 }
