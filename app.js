@@ -82,7 +82,6 @@ let sheetLocked = false;        // user pinned the sheet music
 let lockTimeRemaining = 0;      // seconds of lock time left
 let lockTickInterval = null;    // 1s countdown tick
 const LOCK_TAP_SEC = 30;        // seconds added per tap
-let longPressTimer = null;      // for detecting 2s hold
 
 // Temporal smoothing: EMA over prediction scores across analysis cycles
 const CONSENSUS_WINDOW = 8;      // rolling window size (~8 seconds at 1s intervals)
@@ -1068,15 +1067,15 @@ function updateLockUI() {
         const mins = Math.floor(lockTimeRemaining / 60);
         const secs = lockTimeRemaining % 60;
         const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
-        icon.textContent = `Locked for ${timeStr}`;
+        icon.textContent = `\u{1F512} ${timeStr} — tap to unlock`;
         icon.className = 'sheet-lock-icon locked';
         render.classList.add('locked');
     } else if (sheetLocked) {
-        icon.textContent = '\u{1F512}';
+        icon.textContent = '\u{1F512} tap to unlock';
         icon.className = 'sheet-lock-icon locked';
         render.classList.add('locked');
     } else {
-        icon.textContent = '\u{1F513}';
+        icon.textContent = '';
         icon.className = 'sheet-lock-icon';
         render.classList.remove('locked');
     }
@@ -1344,45 +1343,13 @@ async function init() {
         }
     });
 
-    // Sheet lock: tap to add 30s, long-press (2s) to unlock
-    const sheetEl = $('sheetRender');
-    let longPressPointerId = null;
-
-    sheetEl.addEventListener('pointerdown', (e) => {
-        e.preventDefault();
-        sheetEl.setPointerCapture(e.pointerId);
-        longPressPointerId = e.pointerId;
-        longPressTimer = setTimeout(() => {
-            longPressTimer = 'fired';
-            if (sheetLocked) {
-                // Buzz animation then unlock
-                sheetEl.classList.remove('locked');
-                void sheetEl.offsetWidth;
-                sheetEl.classList.add('locked');
-                if (navigator.vibrate) navigator.vibrate(100);
-                setTimeout(() => unlockSheet(), 300);
-            }
-        }, 2000);
-    });
-    sheetEl.addEventListener('pointerup', (e) => {
-        if (e.pointerId !== longPressPointerId) return;
-        longPressPointerId = null;
-        if (longPressTimer === 'fired') {
-            longPressTimer = null;
-            return; // long press already handled
-        }
-        clearTimeout(longPressTimer);
-        longPressTimer = null;
-        // Short tap — add lock time
+    // Sheet lock: tap sheet to add 30s, tap lock badge to unlock
+    $('sheetRender').addEventListener('click', () => {
         if (lockedTuneId) addLockTime();
     });
-    sheetEl.addEventListener('pointercancel', (e) => {
-        if (e.pointerId !== longPressPointerId) return;
-        longPressPointerId = null;
-        if (longPressTimer && longPressTimer !== 'fired') {
-            clearTimeout(longPressTimer);
-            longPressTimer = null;
-        }
+    $('sheetLockIcon').addEventListener('click', (e) => {
+        e.stopPropagation(); // don't also trigger sheet click
+        if (sheetLocked) unlockSheet();
     });
 
     // Predictions click: load that tune's sheet music
