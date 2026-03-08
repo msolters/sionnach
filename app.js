@@ -488,6 +488,11 @@ async function handleWorkerResult(data) {
     const ratio = secondProb > 0 ? topConsensusProb / secondProb : (topConsensusProb > 0 ? 10 : 0);
     currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
 
+    // When confidence drops to zero, clear hero — we're no longer certain
+    if (currentConfidence < 0.01) {
+        clearHeroTune(musicActive ? 'Listening...' : '');
+    }
+
     // Only update displayed predictions when above confidence floor
     if (topProb >= CONFIDENCE_FLOOR) {
         const predictions = indices.slice(0, 10).map((idx, rank) => ({
