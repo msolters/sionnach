@@ -531,6 +531,11 @@ async function handleWorkerResult(data) {
         $('topTuneLink').classList.add('hidden');
         $('metricKey').textContent = '--';
         $('metricTimeSig').textContent = '--';
+        // Reset ring — identification process is starting over
+        listenMusicSec = 0;
+        listenPauseCount = 0;
+        listenStabilityCount = 0;
+        listenRingTuneId = null;
     } else {
         const predictions = indices.slice(0, 10).map((idx, rank) => ({
             rank: rank + 1,
