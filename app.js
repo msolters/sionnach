@@ -1064,7 +1064,8 @@ function updateLockUI() {
     if (sheetLocked && lockTimeRemaining > 0) {
         const mins = Math.floor(lockTimeRemaining / 60);
         const secs = lockTimeRemaining % 60;
-        icon.textContent = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+        const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
+        icon.textContent = `Locked for ${timeStr}`;
         icon.className = 'sheet-lock-icon locked';
         render.classList.add('locked');
     } else if (sheetLocked) {
