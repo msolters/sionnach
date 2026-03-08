@@ -842,14 +842,14 @@ function updateLockOn(top) {
             }
         }
         updateHistory(top);
-        updateSheetContext();
+        updateSheetContext(top);
         return;
     }
 
     if (top.id === lockedTuneId) {
         // Same tune still locked — update confidence in history and context
         lockedTuneConf = top.prob;
-        updateSheetContext();
+        updateSheetContext(top);
         if (sessionHistory.length > 0 && sessionHistory[0].id === top.id) {
             sessionHistory[0].conf = top.prob;
             renderHistory();
@@ -1243,7 +1243,7 @@ function scheduleAutoScroll() {
 
 // ---- Sheet context fader (visible when hero card scrolled out of view) ----
 
-function updateSheetContext() {
+function updateSheetContext(currentTop) {
     const el = $('sheetContext');
     if (!lockedTuneId) { el.classList.remove('visible'); return; }
     const entry = tuneById[lockedTuneId];
@@ -1254,7 +1254,9 @@ function updateSheetContext() {
     if (entry.key) parts.push(formatKey(entry.key));
     if (typeInfo) parts.push(typeInfo.timeSig);
     if (currentTempo) parts.push(`${currentTempo} BPM`);
-    if (lockedTuneConf > 0) parts.push(`<span class="ctx-conf">${(lockedTuneConf * 100).toFixed(0)}%</span>`);
+    // Use live confidence from current top prediction if available
+    const conf = currentTop ? currentTop.prob : lockedTuneConf;
+    if (conf > 0) parts.push(`<span class="ctx-conf">${(conf * 100).toFixed(0)}%</span>`);
     el.innerHTML = `<span class="sheet-context-name">${entry.name}</span>` +
         (parts.length ? `<span class="sheet-context-meta">${parts.join(' · ')}</span>` : '');
     el.style.opacity = '';
