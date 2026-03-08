@@ -1155,7 +1155,8 @@ function scheduleAutoScroll() {
     if (autoScrollTimer) clearTimeout(autoScrollTimer);
     autoScrollTimer = setTimeout(() => {
         autoScrollTimer = null;
-        if (Date.now() - lastInteractionTime < IDLE_THRESHOLD) return;
+        // Only scroll if the listen ring is full (user played long enough)
+        if (listenProgress < LISTEN_TARGET) return;
         if (window.scrollY > 150) return;
         const panel = $('sheetPanel');
         if (!panel.classList.contains('open')) return;
