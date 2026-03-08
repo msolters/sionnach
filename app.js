@@ -820,6 +820,7 @@ function flushPredictionsList({ predictions, top }) {
                 <div class="pred-bar"></div>
                 <div class="pred-info">
                     <span class="pred-name"></span>
+                    <span class="pred-meta"></span>
                 </div>
                 <span class="pred-pct"></span>`;
             row.addEventListener('animationend', () => row.classList.remove('pred-enter'), { once: true });
@@ -827,8 +828,14 @@ function flushPredictionsList({ predictions, top }) {
 
         row.querySelector('.pred-bar').style.width = barW + '%';
         const nameEl = row.querySelector('.pred-name');
-        const nameText = typeLabel ? `${p.name} <span class="pred-type">${typeLabel}</span>` : p.name;
-        if (nameEl.innerHTML !== nameText) nameEl.innerHTML = nameText;
+        if (nameEl.textContent !== p.name) nameEl.textContent = p.name;
+        const metaEl = row.querySelector('.pred-meta');
+        const tuneEntry = tuneById[p.id];
+        const metaParts = [];
+        if (typeLabel) metaParts.push(typeLabel);
+        if (tuneEntry && tuneEntry.key) metaParts.push(formatKey(tuneEntry.key));
+        const metaText = metaParts.join(' · ');
+        if (metaEl.textContent !== metaText) metaEl.textContent = metaText;
         row.querySelector('.pred-pct').textContent = pct + '%';
         row.classList.toggle('pred-top', isTop);
 
