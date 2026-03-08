@@ -1465,11 +1465,11 @@ async function init() {
         if (isRecording) {
             stopRecording();
             $('micToggle').classList.add('stopped');
-            $('micToggle').title = 'Start microphone';
+            $('micToggle').textContent = 'Start';
         } else {
             startRecording();
             $('micToggle').classList.remove('stopped');
-            $('micToggle').title = 'Stop microphone';
+            $('micToggle').textContent = 'Stop';
         }
     });
 
