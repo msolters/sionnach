@@ -53,12 +53,14 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .recording #timer { color: #c45c3e; }
 .mic-btn {
-    padding: 5px 14px; background: #2a3528; border: 1px solid #3a4a35;
+    padding: 5px 14px; border: none;
     border-radius: 8px; font-size: 12px; font-weight: 600; color: #d4ddd0;
     cursor: pointer; transition: background 0.15s;
 }
-.mic-btn:hover { background: #3a4a35; }
-.mic-btn.stopped { background: #3d7a2a; }
+.mic-btn.recording { background: #8c3030; }
+.mic-btn.recording:hover { background: #a03838; }
+.mic-btn.idle { background: #3d7a2a; }
+.mic-btn.idle:hover { background: #4c8c30; }
 
 /* ---- Level meter ---- */
 .level-meter {
@@ -537,7 +539,7 @@ canvas { display: block; border-radius: 6px; }
                 <div class="viz-header-right">
                     <span id="audioDevice"></span>
                     <span id="timer">0:00</span>
-                    <button class="mic-btn" id="micToggle">Stop</button>
+                    <button class="mic-btn recording" id="micToggle">Stop Recording</button>
                 </div>
             </div>
             <div class="chroma-wrap">

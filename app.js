@@ -392,6 +392,9 @@ async function handleWorkerResult(data) {
             lockCount = 0;
             sheetFetchId = null;
             $('topTuneName').textContent = '';
+            $('topTuneType').textContent = '';
+            $('topTuneConf').textContent = '';
+            $('topTuneLink').classList.add('hidden');
             // Decay smoothed predictions so stale guesses fade
             if (smoothedProbs) {
                 for (let i = 0; i < smoothedProbs.length; i++) smoothedProbs[i] *= 0.8;
@@ -1329,14 +1332,15 @@ async function init() {
 
     // Mic toggle
     $('micToggle').addEventListener('click', () => {
+        const btn = $('micToggle');
         if (isRecording) {
             stopRecording();
-            $('micToggle').classList.add('stopped');
-            $('micToggle').textContent = 'Start';
+            btn.className = 'mic-btn idle';
+            btn.textContent = 'Start Recording';
         } else {
             startRecording();
-            $('micToggle').classList.remove('stopped');
-            $('micToggle').textContent = 'Stop';
+            btn.className = 'mic-btn recording';
+            btn.textContent = 'Stop Recording';
         }
     });
 
