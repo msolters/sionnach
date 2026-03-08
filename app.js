@@ -69,6 +69,7 @@ const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allo
 let listenRingTuneId = null;     // tune ID the ring is tracking
 let listenStabilityCount = 0;    // ticks after lock-on for stability verification
 const STABILITY_TICKS = 30;      // ~3s of stability at 100ms ticks
+let listenRingDisplay = 0;       // smoothed display value (0-1), lerps toward target
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -277,7 +278,13 @@ function updateListenRing() {
         listenStabilityCount = Math.max(0, listenStabilityCount - 2);
     }
 
-    const pct = Math.min(bufferPct + lockPct + stabilityPct, 1);
+    const targetPct = Math.min(bufferPct + lockPct + stabilityPct, 1);
+    // Smooth toward target: fast when increasing, moderate when decreasing
+    const speed = targetPct > listenRingDisplay ? 0.15 : 0.08;
+    listenRingDisplay += (targetPct - listenRingDisplay) * speed;
+    // Snap to target when very close to avoid endless asymptote
+    if (Math.abs(targetPct - listenRingDisplay) < 0.005) listenRingDisplay = targetPct;
+    const pct = listenRingDisplay;
     fill.style.strokeDashoffset = circumference * (1 - pct);
 
     if (pct >= 1) {
