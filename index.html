@@ -422,6 +422,18 @@ canvas { display: block; border-radius: 6px; }
     80% { transform: scale(1.05) rotate(-20deg); }
     100% { transform: scale(1) rotate(0deg); }
 }
+.splash-device {
+    margin: 16px 0 8px;
+}
+.splash-device select {
+    background: #1a2418; color: #d4ddd0;
+    border: 1px solid #2a3528; border-radius: 8px;
+    padding: 8px 12px; font-size: 14px;
+    min-width: 220px; outline: none;
+    font-family: inherit;
+}
+.splash-device select:focus { border-color: #4c8c30; }
+
 #splash .splash-btn {
     display: inline-block; padding: 12px 36px;
     background: #3d7a2a; color: #d4ddd0; border-radius: 10px;
@@ -530,6 +542,11 @@ canvas { display: block; border-radius: 6px; }
 <div id="splash">
     <div class="splash-title">Sionnach</div>
     <div class="splash-fox">&#x1F98A;</div>
+    <div class="splash-device">
+        <select id="audioInputSelect">
+            <option value="">Default Microphone</option>
+        </select>
+    </div>
     <button class="splash-btn" id="splashStart">Get Started</button>
 </div>
 <div class="page" id="dashboard" style="display:none">
@@ -664,7 +681,6 @@ canvas { display: block; border-radius: 6px; }
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.4/dist/abcjs-basic-min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
-<script src="app.js?v=3"></script>
+<script src="app.js?v=4"></script>
 </body>
 </html>

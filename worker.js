@@ -98,16 +98,18 @@ function computeSTFT(samples) {
 // Percussive = median filter along frequency axis (each time frame)
 // Soft mask separates them.
 
-function median1d(arr, len, kernel) {
+// Pre-allocated sort buffer for median1d (reused across calls)
+let _medianSortBuf = new Float32Array(HPSS_KERNEL);
+
+function median1d(arr, len, kernel, out) {
     const half = kernel >> 1;
-    const out = new Float32Array(len);
-    const buf = new Float32Array(kernel);
+    if (_medianSortBuf.length < kernel) _medianSortBuf = new Float32Array(kernel);
+    const buf = _medianSortBuf;
     for (let i = 0; i < len; i++) {
         const start = Math.max(0, i - half);
         const end = Math.min(len - 1, i + half);
         const count = end - start + 1;
         for (let j = 0; j < count; j++) buf[j] = arr[start + j];
-        // Partial sort for median
         const sub = buf.subarray(0, count);
         sub.sort();
         out[i] = sub[count >> 1];
@@ -118,19 +120,21 @@ function median1d(arr, len, kernel) {
 function hpss(mag, nFrames, nBins) {
     // Harmonic: median along time for each frequency bin
     const harmonic = new Float32Array(nBins * nFrames);
+    const medOutH = new Float32Array(Math.max(nFrames, nBins));
     for (let b = 0; b < nBins; b++) {
         const row = mag.subarray(b * nFrames, b * nFrames + nFrames);
-        const med = median1d(row, nFrames, HPSS_KERNEL);
-        harmonic.set(med, b * nFrames);
+        median1d(row, nFrames, HPSS_KERNEL, medOutH);
+        harmonic.set(medOutH.subarray(0, nFrames), b * nFrames);
     }
 
     // Percussive: median along frequency for each time frame
     const percussive = new Float32Array(nBins * nFrames);
     const col = new Float32Array(nBins);
+    const medOutP = new Float32Array(nBins);
     for (let f = 0; f < nFrames; f++) {
         for (let b = 0; b < nBins; b++) col[b] = mag[b * nFrames + f];
-        const med = median1d(col, nBins, HPSS_KERNEL);
-        for (let b = 0; b < nBins; b++) percussive[b * nFrames + f] = med[b];
+        median1d(col, nBins, HPSS_KERNEL, medOutP);
+        for (let b = 0; b < nBins; b++) percussive[b * nFrames + f] = medOutP[b];
     }
 
     // Soft mask: H_mask = H^2 / (H^2 + P^2 + eps)
@@ -185,6 +189,7 @@ function processStandard(mag, nFrames, nBins) {
 function removeDrone(chroma, nFrames) {
     const out = new Float32Array(chroma.length);
     const half = DRONE_WINDOW >> 1;
+    const buf = new Float32Array(DRONE_WINDOW + 1);
 
     for (let c = 0; c < N_CHROMA; c++) {
         const row = c * nFrames;
@@ -192,9 +197,8 @@ function removeDrone(chroma, nFrames) {
             const start = Math.max(0, f - half);
             const end = Math.min(nFrames - 1, f + half);
             const count = end - start + 1;
-            const buf = new Float32Array(count);
             for (let j = 0; j < count; j++) buf[j] = chroma[row + start + j];
-            buf.sort();
+            buf.subarray(0, count).sort();
             const median = buf[count >> 1];
             out[row + f] = Math.max(0, chroma[row + f] - median);
         }
@@ -223,15 +227,15 @@ function processForeground(mag, nFrames, nBins) {
 function medianFilter(chroma, nFrames) {
     const half = MEDIAN_WIDTH >> 1;
     const out = new Float32Array(chroma.length);
+    const buf = new Float32Array(MEDIAN_WIDTH);
     for (let c = 0; c < N_CHROMA; c++) {
         const row = c * nFrames;
         for (let f = 0; f < nFrames; f++) {
             const start = Math.max(0, f - half);
             const end = Math.min(nFrames - 1, f + half);
             const count = end - start + 1;
-            const buf = new Float32Array(count);
             for (let j = 0; j < count; j++) buf[j] = chroma[row + start + j];
-            buf.sort();
+            buf.subarray(0, count).sort();
             out[row + f] = buf[count >> 1];
         }
     }

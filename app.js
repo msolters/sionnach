@@ -1,5 +1,5 @@
 // Irish Tune Identifier — Client-side web app
-// DSP runs in a Web Worker; ONNX inference is async via WASM.
+// DSP runs in a Web Worker; ONNX inference runs in a separate worker.
 // The main thread only handles audio capture and UI updates.
 
 const SAMPLE_RATE = 22050;
@@ -10,7 +10,8 @@ const HOP_FRAMES = 172;
 const MAX_AUDIO_SEC = 15;
 const MIN_AUDIO_SEC = 4;      // start predicting early with zero-padded windows
 const UPDATE_INTERVAL_MS = 1000;
-const CHROMA_INTERVAL_MS = 200;  // fast chromagram refresh (~5 fps)
+const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+const CHROMA_INTERVAL_MS = IS_MOBILE ? 500 : 200;  // slower on mobile to save CPU
 const COMPACT_THRESHOLD = 500;
 const SESSION_URL = 'https://thesession.org/tunes';
 
@@ -38,8 +39,10 @@ let audioSamples = [];
 let totalSamples = 0;
 let tuneIndex = null;
 let tuneById = {};  // tune ID -> tune entry (built after loading index)
-let onnxSession = null;
+let inferenceWorker = null;
+let inferenceRequestId = 0;
 let dspWorker = null;
+let selectedDeviceId = '';
 let isRecording = false;
 let startTime = 0;
 let timerHandle = null;
@@ -144,7 +147,10 @@ function getAudioBuffer() {
 
 async function startRecording() {
     try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const audioConstraints = selectedDeviceId
+            ? { audio: { deviceId: { exact: selectedDeviceId } } }
+            : { audio: true };
+        mediaStream = await navigator.mediaDevices.getUserMedia(audioConstraints);
         const track = mediaStream.getAudioTracks()[0];
         if (track) $('audioDevice').textContent = track.label || 'Unknown mic';
     } catch (e) {
@@ -334,7 +340,7 @@ function requestAnalysis() {
     );
 }
 
-async function handleWorkerResult(data) {
+function handleWorkerResult(data) {
     workerBusy = false;
     if (!data) return;
 
@@ -389,6 +395,33 @@ async function handleWorkerResult(data) {
     // If silent, skip inference — keep the last results on screen
     if (!musicActive) return;
 
+    // Send tensors to inference worker (non-blocking)
+    inferenceRequestId++;
+    const transferables = [
+        ...tensors.map(t => t.buffer),
+        ...tensorsFg.map(t => t.buffer),
+    ];
+    inferenceWorker.postMessage({
+        type: 'infer',
+        data: {
+            tensorsStd: tensors,
+            tensorsFg: tensorsFg,
+            requestId: inferenceRequestId,
+        }
+    }, transferables);
+}
+
+// ---- Inference results (from inference worker) ----
+
+const WEIGHT_STD = 0.35;
+const WEIGHT_FG = 0.65;
+
+function handleInferenceResult({ probsStd, probsFg, requestId }) {
+    // Discard stale results
+    if (requestId !== inferenceRequestId) return;
+
+    const nFrames = lastNFrames;
+
     // Compute window frame positions (mirrors worker logic)
     const winStarts = [];
     if (nFrames < WINDOW_FRAMES) {
@@ -397,36 +430,10 @@ async function handleWorkerResult(data) {
         for (let s = 0; s <= nFrames - WINDOW_FRAMES; s += HOP_FRAMES) winStarts.push(s);
     }
 
-    // Run ONNX inference on both standard and foreground tensors
-    const WEIGHT_STD = 0.35;
-    const WEIGHT_FG = 0.65;
-
-    // Helper: run inference on a set of tensors, return per-window probs
-    async function inferWindows(windowTensors) {
-        const allProbs = [];
-        for (const tensorData of windowTensors) {
-            const input = new ort.Tensor('float32', tensorData, [1, 2, N_CHROMA, WINDOW_FRAMES]);
-            const output = await onnxSession.run({ input });
-            const logits = output.output.data;
-            let maxL = -Infinity;
-            for (let i = 0; i < logits.length; i++) if (logits[i] > maxL) maxL = logits[i];
-            const probs = new Float32Array(logits.length);
-            let sum = 0;
-            for (let i = 0; i < logits.length; i++) { probs[i] = Math.exp(logits[i] - maxL); sum += probs[i]; }
-            for (let i = 0; i < probs.length; i++) probs[i] /= sum;
-            allProbs.push(probs);
-        }
-        return allProbs;
-    }
-
-    const probsStd = await inferWindows(tensors);
-    const probsFg = tensorsFg && tensorsFg.length > 0 ? await inferWindows(tensorsFg) : [];
-
     // Build per-window regions from ensemble for chromagram overlay
     const nClasses = probsStd[0].length;
     const regions = [];
     for (let w = 0; w < probsStd.length; w++) {
-        // Ensemble this window's probs
         const combined = new Float32Array(nClasses);
         for (let i = 0; i < nClasses; i++) combined[i] = probsStd[w][i] * WEIGHT_STD;
         if (w < probsFg.length) {
@@ -451,7 +458,6 @@ async function handleWorkerResult(data) {
 
     // Ensemble average across all windows
     const avg = new Float32Array(nClasses);
-    // Normalize per-approach then combine
     const avgStd = new Float32Array(nClasses);
     for (const p of probsStd) for (let i = 0; i < nClasses; i++) avgStd[i] += p[i];
     for (let i = 0; i < nClasses; i++) avgStd[i] /= probsStd.length;
@@ -465,9 +471,7 @@ async function handleWorkerResult(data) {
         for (let i = 0; i < nClasses; i++) avg[i] = avgStd[i];
     }
 
-    // Rolling window consensus: keep last N prediction vectors and average.
-    // This naturally handles "50% tune A, rest scattered" — tune A dominates
-    // because the scattered votes dilute each other.
+    // Rolling window consensus
     recentProbs.push(avg);
     if (recentProbs.length > CONSENSUS_WINDOW) recentProbs.shift();
 
@@ -483,13 +487,12 @@ async function handleWorkerResult(data) {
 
     const topProb = consensus[indices[0]];
 
-    // Always update confidence from the consensus (drives the ring)
+    // Update confidence (drives the ring)
     const topConsensusProb = consensus[indices[0]];
     const secondProb = consensus[indices[1]] || 0;
     const ratio = secondProb > 0 ? topConsensusProb / secondProb : (topConsensusProb > 0 ? 10 : 0);
     currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
 
-    // Show detection state when not confident
     if (currentConfidence < 0.01) {
         if (!musicActive) {
             clearHeroTune('Silence');
@@ -500,7 +503,6 @@ async function handleWorkerResult(data) {
         }
     }
 
-    // Only update displayed predictions when above confidence floor
     if (topProb >= CONFIDENCE_FLOOR) {
         const predictions = indices.slice(0, 10).map((idx, rank) => ({
             rank: rank + 1,
@@ -1139,7 +1141,7 @@ function scheduleAutoScroll() {
     autoScrollTimer = setTimeout(() => {
         autoScrollTimer = null;
         // Only scroll if the listen ring is full (user played long enough)
-        if (listenProgress < LISTEN_TARGET) return;
+        if (listenRingDisplay < 0.99) return;
         if (window.scrollY > 150) return;
         const panel = $('sheetPanel');
         if (!panel.classList.contains('open')) return;
@@ -1274,16 +1276,41 @@ function initSplash() {
         });
     }
 
-    setInterval(cycleEmoji, 2500);
+    const emojiTimer = setInterval(cycleEmoji, 2500);
+
+    // Populate audio input devices
+    populateAudioInputs();
+
     btn.focus();
 
     btn.addEventListener('click', () => {
+        clearInterval(emojiTimer);
+        selectedDeviceId = $('audioInputSelect')?.value || '';
         $('dashboard').style.display = '';
         splash.classList.add('fade-out');
         setTimeout(() => { splash.style.display = 'none'; }, 600);
         setTimeout(() => { $('tagline').style.opacity = '1'; }, 800);
         init();
     });
+}
+
+async function populateAudioInputs() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const audioInputs = devices.filter(d => d.kind === 'audioinput');
+        const select = $('audioInputSelect');
+        if (!select || audioInputs.length <= 1) return;
+        select.innerHTML = '';
+        for (let i = 0; i < audioInputs.length; i++) {
+            const d = audioInputs[i];
+            const opt = document.createElement('option');
+            opt.value = d.deviceId;
+            opt.textContent = d.label || `Microphone ${i + 1}`;
+            select.appendChild(opt);
+        }
+    } catch (e) {
+        // Can't enumerate, default dropdown is fine
+    }
 }
 
 async function init() {
@@ -1343,9 +1370,22 @@ async function init() {
     status.textContent = 'Loading ML model (20 MB)...';
     progress.value = 2;
     try {
-        ort.env.wasm.numThreads = 1;
-        onnxSession = await ort.InferenceSession.create('assets/model.onnx', {
-            executionProviders: ['wasm'],
+        inferenceWorker = new Worker('inference-worker.js');
+        await new Promise((resolve, reject) => {
+            inferenceWorker.onmessage = (e) => {
+                if (e.data.type === 'ready') {
+                    // Switch to permanent message handler
+                    inferenceWorker.onmessage = (ev) => {
+                        if (ev.data.type === 'result') handleInferenceResult(ev.data.data);
+                    };
+                    resolve();
+                }
+                if (e.data.type === 'error') reject(new Error(e.data.error));
+            };
+            inferenceWorker.postMessage({
+                type: 'init',
+                data: { modelUrl: 'assets/model.onnx' }
+            });
         });
     } catch (e) {
         status.textContent = 'Failed to load model: ' + e.message;
