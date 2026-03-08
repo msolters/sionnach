@@ -812,12 +812,6 @@ function updateLockOn(top) {
         lockCount = 1;
     }
 
-    // Show "Coming up" with opacity scaling by confidence
-    if (lockedTuneId && lockCount < LOCK_THRESHOLD) {
-        const confidence = lockCount / LOCK_THRESHOLD;
-        showComingUpForTune(top.id, confidence);
-    }
-
     if (lockCount >= LOCK_THRESHOLD) {
         updateHistory(top);
         lockedTuneConf = top.prob;
