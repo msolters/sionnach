@@ -301,7 +301,7 @@ function updateListenRing() {
     } else if (musicActive) {
         label.textContent = currentConfidence > 0 ? 'Listening...' : '';
     } else {
-        label.textContent = '';
+        label.textContent = 'Play a tune...';
     }
 }
 
