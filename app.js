@@ -749,24 +749,55 @@ function renderResults(predictions) {
     }
     $('metricTempo').textContent = currentTempo ? `${currentTempo}` : '--';
 
-    // Predictions list (#2-#10)
+    // Predictions list — stable alphabetical order, reuse DOM elements
     const list = $('predictionsList');
     const maxProb = top.prob;
-    list.innerHTML = predictions.map(p => {
+    const sorted = [...predictions].sort((a, b) => a.name.localeCompare(b.name));
+    const currentIds = new Set(sorted.map(p => String(p.id)));
+
+    // Remove entries no longer in top predictions (fade out)
+    for (const el of [...list.children]) {
+        if (!el.dataset.tuneId || !currentIds.has(el.dataset.tuneId)) {
+            el.classList.add('pred-exit');
+            el.addEventListener('animationend', () => el.remove(), { once: true });
+        }
+    }
+
+    // Update or create entries
+    for (const p of sorted) {
+        const id = String(p.id);
+        let row = list.querySelector(`[data-tune-id="${id}"]`);
         const pct = (p.prob * 100).toFixed(1);
         const barW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
         const typeLabel = formatType(p.type);
-        const typeHtml = typeLabel ? `<span class="pred-type">${typeLabel}</span>` : '';
-        const topClass = p.rank === 1 ? ' pred-top' : '';
-        return `<div class="pred-row${topClass}" data-tune-id="${p.id}" data-tune-name="${p.name}">
-            <div class="pred-bar" style="width:${barW}%"></div>
-            <span class="pred-rank">${p.rank}</span>
-            <div class="pred-info">
-                <span class="pred-name">${p.name} ${typeHtml}</span>
-            </div>
-            <span class="pred-pct">${pct}%</span>
-        </div>`;
-    }).join('');
+        const isTop = p.id === top.id;
+
+        if (!row) {
+            // New entry — create and fade in
+            row = document.createElement('div');
+            row.className = 'pred-row pred-enter';
+            row.dataset.tuneId = id;
+            row.dataset.tuneName = p.name;
+            row.innerHTML = `
+                <div class="pred-bar"></div>
+                <div class="pred-info">
+                    <span class="pred-name"></span>
+                </div>
+                <span class="pred-pct"></span>`;
+            row.addEventListener('animationend', () => row.classList.remove('pred-enter'), { once: true });
+        }
+
+        // Update content
+        row.querySelector('.pred-bar').style.width = barW + '%';
+        const nameEl = row.querySelector('.pred-name');
+        const nameText = typeLabel ? `${p.name} <span class="pred-type">${typeLabel}</span>` : p.name;
+        if (nameEl.innerHTML !== nameText) nameEl.innerHTML = nameText;
+        row.querySelector('.pred-pct').textContent = pct + '%';
+        row.classList.toggle('pred-top', isTop);
+
+        // Insert in alphabetical order
+        list.appendChild(row);
+    }
 }
 
 // ---- Sheet Music ----

@@ -353,27 +353,36 @@ canvas { display: block; border-radius: 6px; }
 
 .pred-row {
     position: relative; display: flex; align-items: center; gap: 6px;
-    padding: 8px 10px; border-bottom: 1px solid #2a3528;
-    border-radius: 4px; cursor: pointer; overflow: hidden;
-    transition: background 0.15s;
+    padding: 6px 10px; border-radius: 4px; cursor: pointer; overflow: hidden;
+    transition: background 0.15s, border-color 0.3s, opacity 0.3s;
+    border-left: 3px solid transparent;
 }
 .pred-row:hover { background: rgba(106,170,61,0.08); }
-.pred-row.pred-top { border-left: 3px solid #6aaa3d; padding-left: 5px; }
+.pred-row.pred-top { border-left-color: #6aaa3d; }
 .pred-row.pred-top .pred-name { color: #6aaa3d; }
-.pred-row:last-child { border-bottom: none; }
+.pred-row.pred-enter { animation: predSlideIn 0.35s ease both; }
+.pred-row.pred-exit { animation: predFadeOut 0.25s ease both; pointer-events: none; }
+@keyframes predSlideIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: none; }
+}
+@keyframes predFadeOut {
+    from { opacity: 1; }
+    to { opacity: 0; transform: translateX(8px); }
+}
 .pred-bar {
     position: absolute; left: 0; top: 0; bottom: 0;
-    background: rgba(106,170,61,0.12); border-radius: 4px;
-    transition: width 0.4s ease; pointer-events: none;
+    background: rgba(106,170,61,0.10); border-radius: 4px;
+    transition: width 0.6s ease; pointer-events: none;
 }
-.pred-rank { font-size: 13px; font-weight: 700; color: #4a6340; min-width: 20px; text-align: right; position: relative; }
 .pred-info { flex: 1; min-width: 0; position: relative; }
 .pred-name {
     font-size: 14px; font-weight: 500;
     display: block;
 }
 .pred-type { font-size: 11px; color: #7a9470; font-weight: 400; margin-left: 4px; }
-.pred-pct { font-size: 13px; font-weight: 600; color: #7a9470; min-width: 40px; text-align: right; position: relative; }
+.pred-pct { font-size: 13px; font-weight: 600; color: #7a9470; min-width: 40px; text-align: right; position: relative; transition: color 0.3s; }
+.pred-row.pred-top .pred-pct { color: #6aaa3d; }
 .empty-state { text-align: center; color: #4a6340; padding: 20px 0; font-size: 12px; }
 
 /* ---- Splash screen ---- */
@@ -444,8 +453,7 @@ canvas { display: block; border-radius: 6px; }
         max-height: 160px;
         display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 12px;
     }
-    .pred-row { border-bottom: none; border-left: 1px solid #2a3528; padding-left: 8px; }
-    .pred-row.pred-top { border-left: 3px solid #6aaa3d; }
+    .pred-row { border-left-color: #2a3528; }
 }
 
 @media (max-width: 600px) {
