@@ -88,6 +88,11 @@ const LOCK_SILENCE_WAIT = 60;   // seconds of no music before countdown
 const LOCK_COUNTDOWN = 5;       // countdown duration in seconds
 const RIVAL_THRESHOLD = 3;      // consecutive rival-tune windows to trigger countdown
 
+// Temporal smoothing: EMA over prediction scores across analysis cycles
+let smoothedProbs = null;        // Float32Array(nClasses), null until first prediction
+const EMA_ALPHA = 0.4;           // weight of new prediction (0.4 = moderate smoothing)
+const CONFIDENCE_FLOOR = 0.05;   // below this top prob = "not confident" (noise/silence)
+
 const $ = id => document.getElementById(id);
 
 // ---- Audio buffer management ----
@@ -391,6 +396,10 @@ async function handleWorkerResult(data) {
             musicActive = false;
             lockCount = 0;
             sheetFetchId = null;
+            // Decay smoothed predictions so stale guesses fade
+            if (smoothedProbs) {
+                for (let i = 0; i < smoothedProbs.length; i++) smoothedProbs[i] *= 0.8;
+            }
             if (sheetLocked) startSilenceUnlockTimer();
             if (isRecording) $('statusText').textContent = 'Waiting for music...';
         }
@@ -500,19 +509,41 @@ async function handleWorkerResult(data) {
         for (let i = 0; i < nClasses; i++) avg[i] = avgStd[i];
     }
 
+    // Temporal smoothing: EMA blends new prediction with accumulated history.
+    // Prevents brief flickers to wrong tunes and stabilizes during noise.
+    if (!smoothedProbs) {
+        smoothedProbs = new Float32Array(avg);
+    } else {
+        for (let i = 0; i < nClasses; i++) {
+            smoothedProbs[i] = EMA_ALPHA * avg[i] + (1 - EMA_ALPHA) * smoothedProbs[i];
+        }
+    }
+
     const indices = Array.from({ length: nClasses }, (_, i) => i);
-    indices.sort((a, b) => avg[b] - avg[a]);
+    indices.sort((a, b) => smoothedProbs[b] - smoothedProbs[a]);
 
-    const predictions = indices.slice(0, 10).map((idx, rank) => ({
-        rank: rank + 1,
-        prob: avg[idx],
-        id: tuneIndex[idx]?.id,
-        name: tuneIndex[idx]?.name || `Unknown #${idx}`,
-        type: tuneIndex[idx]?.type || '',
-    }));
+    const topProb = smoothedProbs[indices[0]];
 
-    renderResults(predictions);
-    updateLockOn(predictions[0]);
+    // If confidence is below floor, treat as noise — don't update predictions
+    if (topProb < CONFIDENCE_FLOOR) {
+        $('topTuneName').textContent = 'Listening...';
+        $('topTuneType').textContent = '';
+        $('topTuneConf').textContent = '';
+        $('topTuneLink').classList.add('hidden');
+        $('metricKey').textContent = '--';
+        $('metricTimeSig').textContent = '--';
+    } else {
+        const predictions = indices.slice(0, 10).map((idx, rank) => ({
+            rank: rank + 1,
+            prob: smoothedProbs[idx],
+            id: tuneIndex[idx]?.id,
+            name: tuneIndex[idx]?.name || `Unknown #${idx}`,
+            type: tuneIndex[idx]?.type || '',
+        }));
+
+        renderResults(predictions);
+        updateLockOn(predictions[0]);
+    }
     if (isRecording) $('statusText').textContent = `Analysing last ${MAX_AUDIO_SEC}s`;
 }
 
