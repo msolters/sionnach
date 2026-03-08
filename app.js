@@ -81,6 +81,8 @@ const LOCK_TAP_SEC = 30;        // seconds added per tap
 const CONSENSUS_WINDOW = 8;      // rolling window size (~8 seconds at 1s intervals)
 const CONFIDENCE_FLOOR = 0.02;   // below this top prob = "not confident" (noise/silence)
 let recentProbs = [];             // circular buffer of recent probability vectors
+let pendingPredictions = null;    // latest predictions waiting to be flushed
+let predsDebounceTimer = null;    // debounce timer for predictions list
 
 const $ = id => document.getElementById(id);
 
@@ -745,31 +747,61 @@ function renderResults(predictions) {
     }
     $('metricTempo').textContent = currentTempo ? `${currentTempo}` : '--';
 
-    // Predictions list — stable alphabetical order, reuse DOM elements
+    // Update existing prediction bars/percentages every cycle (smooth animations)
+    const list = $('predictionsList');
+    const maxProb = top.prob;
+    for (const p of predictions) {
+        const row = list.querySelector(`.pred-row:not(.pred-exit)[data-tune-id="${p.id}"]`);
+        if (!row) continue;
+        const barW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
+        row.querySelector('.pred-bar').style.width = barW + '%';
+        row.querySelector('.pred-pct').textContent = (p.prob * 100).toFixed(1) + '%';
+        row.classList.toggle('pred-top', p.id === top.id);
+    }
+
+    // Debounce adding/removing entries — only every 3 seconds
+    pendingPredictions = { predictions, top };
+    if (!predsDebounceTimer) {
+        predsDebounceTimer = setTimeout(() => {
+            predsDebounceTimer = null;
+            if (pendingPredictions) flushPredictionsList(pendingPredictions);
+        }, 3000);
+        // First call: render immediately
+        flushPredictionsList(pendingPredictions);
+    }
+}
+
+function flushPredictionsList({ predictions, top }) {
     const list = $('predictionsList');
     const maxProb = top.prob;
     const sorted = [...predictions].sort((a, b) => a.name.localeCompare(b.name));
     const currentIds = new Set(sorted.map(p => String(p.id)));
 
-    // Remove entries no longer in top predictions (fade out)
+    // Remove empty state and entries no longer in top predictions
     for (const el of [...list.children]) {
+        if (el.classList.contains('empty-state')) {
+            el.remove();
+            continue;
+        }
+        if (el.classList.contains('pred-exit')) continue; // already exiting
         if (!el.dataset.tuneId || !currentIds.has(el.dataset.tuneId)) {
             el.classList.add('pred-exit');
             el.addEventListener('animationend', () => el.remove(), { once: true });
+            // Fallback removal if animation doesn't fire
+            setTimeout(() => { if (el.parentNode) el.remove(); }, 500);
         }
     }
 
     // Update or create entries
     for (const p of sorted) {
         const id = String(p.id);
-        let row = list.querySelector(`[data-tune-id="${id}"]`);
+        let row = list.querySelector(`.pred-row:not(.pred-exit)[data-tune-id="${id}"]`);
         const pct = (p.prob * 100).toFixed(1);
         const barW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
         const typeLabel = formatType(p.type);
         const isTop = p.id === top.id;
 
         if (!row) {
-            // New entry — create and fade in
             row = document.createElement('div');
             row.className = 'pred-row pred-enter';
             row.dataset.tuneId = id;
@@ -783,7 +815,6 @@ function renderResults(predictions) {
             row.addEventListener('animationend', () => row.classList.remove('pred-enter'), { once: true });
         }
 
-        // Update content
         row.querySelector('.pred-bar').style.width = barW + '%';
         const nameEl = row.querySelector('.pred-name');
         const nameText = typeLabel ? `${p.name} <span class="pred-type">${typeLabel}</span>` : p.name;
@@ -791,7 +822,6 @@ function renderResults(predictions) {
         row.querySelector('.pred-pct').textContent = pct + '%';
         row.classList.toggle('pred-top', isTop);
 
-        // Insert in alphabetical order
         list.appendChild(row);
     }
 }
