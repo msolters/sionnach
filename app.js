@@ -201,7 +201,7 @@ async function startRecording() {
     silenceCount = 0;
     lockCount = 0;
     sheetFetchId = null;
-    $('topTuneName').textContent = musicActive ? 'Listening...' : 'Play a tune...';
+    $('topTuneName').textContent = musicActive ? 'Listening...' : '';
     $('topTuneType').textContent = '';
     $('topTuneConf').textContent = '';
     $('topTuneLink').classList.add('hidden');
@@ -522,7 +522,7 @@ async function handleWorkerResult(data) {
 
     // If confidence is below floor, treat as noise — don't update predictions
     if (topProb < CONFIDENCE_FLOOR) {
-        $('topTuneName').textContent = musicActive ? 'Listening...' : 'Play a tune...';
+        $('topTuneName').textContent = musicActive ? 'Listening...' : '';
         $('topTuneType').textContent = '';
         $('topTuneConf').textContent = '';
         $('topTuneLink').classList.add('hidden');
