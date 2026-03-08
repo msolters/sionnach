@@ -76,7 +76,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .layout { display: flex; gap: 16px; align-items: flex-start; }
 .main-col { flex: 1; min-width: 0; }
 .side-col {
-    width: 260px; flex-shrink: 0;
+    width: 300px; flex-shrink: 0;
     position: sticky; top: 16px;
     max-height: calc(100vh - 32px);
     display: flex; flex-direction: column;
@@ -365,7 +365,6 @@ canvas { display: block; border-radius: 6px; }
 .pred-info { flex: 1; min-width: 0; position: relative; }
 .pred-name {
     font-size: 14px; font-weight: 500;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     display: block;
 }
 .pred-type { font-size: 11px; color: #7a9470; font-weight: 400; margin-left: 4px; }
@@ -436,7 +435,12 @@ canvas { display: block; border-radius: 6px; }
         max-height: none; order: -1;
     }
     .preds-card { max-height: 200px; }
-    .preds-list { max-height: 160px; }
+    .preds-list {
+        max-height: 160px;
+        display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0 12px;
+    }
+    .pred-row { border-bottom: none; border-left: 1px solid #2a3528; padding-left: 8px; }
+    .pred-row.pred-top { border-left: 3px solid #6aaa3d; }
 }
 
 @media (max-width: 600px) {
