@@ -53,9 +53,11 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .recording #timer { color: #c45c3e; }
 .mic-btn {
-    padding: 2px 6px; background: none; border: 1px solid #2a3528;
-    border-radius: 6px; font-size: 14px; color: #7a9470;
+    padding: 6px 10px; background: none; border: 1px solid #2a3528;
+    border-radius: 8px; font-size: 18px; color: #7a9470;
     cursor: pointer; line-height: 1; transition: background 0.15s, color 0.15s;
+    min-width: 40px; min-height: 36px;
+    display: flex; align-items: center; justify-content: center;
 }
 .mic-btn:hover { background: #2a3528; color: #d4ddd0; }
 .mic-btn.stopped { color: #c45c3e; }
