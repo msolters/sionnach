@@ -91,6 +91,15 @@ let recentProbs = [];             // circular buffer of recent probability vecto
 
 const $ = id => document.getElementById(id);
 
+function clearHeroTune(label) {
+    $('topTuneName').textContent = label || '';
+    $('topTuneType').textContent = '';
+    $('topTuneConf').textContent = '';
+    $('topTuneLink').classList.add('hidden');
+    $('metricKey').textContent = '--';
+    $('metricTimeSig').textContent = '--';
+}
+
 // ---- Audio buffer management ----
 
 function compactBuffer() {
@@ -143,7 +152,7 @@ async function startRecording() {
         const track = mediaStream.getAudioTracks()[0];
         if (track) $('audioDevice').textContent = track.label || 'Unknown mic';
     } catch (e) {
-        $('topTuneName').textContent = 'Mic denied — tap to retry';
+        clearHeroTune('Mic denied — tap to retry');
         $('topTuneName').style.cursor = 'pointer';
         $('topTuneName').onclick = () => { $('topTuneName').onclick = null; $('topTuneName').style.cursor = ''; startRecording(); };
         return;
@@ -197,12 +206,8 @@ async function startRecording() {
     silenceCount = 0;
     lockCount = 0;
     sheetFetchId = null;
-    $('topTuneName').textContent = musicActive ? 'Listening...' : '';
-    $('topTuneType').textContent = '';
-    $('topTuneConf').textContent = '';
-    $('topTuneLink').classList.add('hidden');
+    clearHeroTune();
     $('metricTempo').textContent = '--';
-    $('metricTimeSig').textContent = '--';
     document.body.classList.add('recording');
 
     requestAnimationFrame(updateLevel);
@@ -211,7 +216,7 @@ async function startRecording() {
     chromaHandle = setInterval(requestChromaOnly, CHROMA_INTERVAL_MS);
     } catch (e) {
         console.error('Failed to start recording:', e);
-        $('topTuneName').textContent = 'Error — tap to retry';
+        clearHeroTune('Error — tap to retry');
         $('topTuneName').style.cursor = 'pointer';
         $('topTuneName').onclick = () => { $('topTuneName').onclick = null; $('topTuneName').style.cursor = ''; startRecording(); };
     }
@@ -227,7 +232,7 @@ function stopRecording() {
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
     if (audioContext) { audioContext.close(); audioContext = null; }
 
-    $('topTuneName').textContent = 'Stopped';
+    clearHeroTune('Stopped');
     document.body.classList.remove('recording');
 
     requestAnalysis();
@@ -391,10 +396,7 @@ async function handleWorkerResult(data) {
             musicActive = false;
             lockCount = 0;
             sheetFetchId = null;
-            $('topTuneName').textContent = '';
-            $('topTuneType').textContent = '';
-            $('topTuneConf').textContent = '';
-            $('topTuneLink').classList.add('hidden');
+            clearHeroTune();
             // Halve the rolling window so stale guesses fade
             if (recentProbs.length > 2) {
                 recentProbs = recentProbs.slice(-Math.ceil(recentProbs.length / 2));
@@ -408,7 +410,7 @@ async function handleWorkerResult(data) {
             lockCount = 0;
             sheetFetchId = null;
             recentProbs = [];  // reset so stale predictions don't linger
-            $('topTuneName').textContent = 'Listening...';
+            clearHeroTune('Listening...');
         }
     }
 
@@ -528,12 +530,7 @@ async function handleWorkerResult(data) {
 
     // If confidence is below floor, treat as noise — don't update predictions
     if (topProb < CONFIDENCE_FLOOR) {
-        $('topTuneName').textContent = musicActive ? 'Listening...' : '';
-        $('topTuneType').textContent = '';
-        $('topTuneConf').textContent = '';
-        $('topTuneLink').classList.add('hidden');
-        $('metricKey').textContent = '--';
-        $('metricTimeSig').textContent = '--';
+        clearHeroTune(musicActive ? 'Listening...' : '');
         // Reset ring — identification process is starting over
         listenMusicSec = 0;
         listenPauseCount = 0;
