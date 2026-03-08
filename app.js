@@ -154,11 +154,23 @@ async function startRecording() {
     }
 
     try {
-    audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+    // Try target sample rate; fall back to native if device rejects it
+    try {
+        audioContext = new AudioContext({ sampleRate: SAMPLE_RATE });
+        if (audioContext.sampleRate !== SAMPLE_RATE) {
+            audioContext.close();
+            audioContext = new AudioContext();
+        }
+    } catch (_) {
+        audioContext = new AudioContext();
+    }
 
     await audioContext.audioWorklet.addModule('audio-processor.js');
     const source = audioContext.createMediaStreamSource(mediaStream);
-    workletNode = new AudioWorkletNode(audioContext, 'pcm-processor');
+    const nativeSR = audioContext.sampleRate;
+    workletNode = new AudioWorkletNode(audioContext, 'pcm-processor', {
+        processorOptions: { targetRate: SAMPLE_RATE, nativeRate: nativeSR }
+    });
 
     const analyser = audioContext.createAnalyser();
     analyser.fftSize = 256;
