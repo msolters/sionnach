@@ -60,7 +60,6 @@ let sheetSettingIdx = 0;
 let sheetFetchId = null;  // tune ID currently being fetched/displayed
 let musicActive = false;   // true when signal is above noise floor
 let silenceCount = 0;      // consecutive quiet analysis cycles
-const SILENCE_THRESHOLD = 0.005;  // RMS below this = silence/noise
 const SILENCE_CYCLES = 5;  // cycles of quiet before declaring "stopped"
 let autoScrollTimer = null;  // delayed auto-scroll after lock-on
 const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
@@ -339,8 +338,14 @@ async function handleWorkerResult(data) {
 
     const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
 
-    // Detect silence: check if current input level is below noise floor
-    const isQuiet = inputLevel < SILENCE_THRESHOLD;
+    // Detect silence using average energy across the full analysis window,
+    // not the instantaneous 5ms inputLevel which flickers between notes.
+    let windowEnergy = 0;
+    for (let f = 0; f < nFrames; f++) {
+        for (let c = 0; c < 12; c++) windowEnergy += rawEnergy[c * nFrames + f];
+    }
+    windowEnergy /= (nFrames * 12); // average per-bin per-frame energy
+    const isQuiet = windowEnergy < 0.001;
     if (isQuiet) {
         silenceCount++;
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
