@@ -67,9 +67,6 @@ const AUTO_SCROLL_DELAY = 3000;  // ms after lock-on before auto-scrolling
 let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
 const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
 let listenRingDisplay = 0;       // smoothed display value (0-1), lerps toward target
-let listenMusicSec = 0;          // seconds of actual music detected (not ambient noise)
-let listenPauseCount = 0;        // consecutive quiet ticks for pause tolerance
-const LISTEN_PAUSE_TOLERANCE = 3; // seconds of pause before draining
 let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
@@ -261,24 +258,14 @@ function updateListenRing() {
     const circumference = 213.6;
     const fill = $('listenRingFill');
     const label = $('listenRingLabel');
-    const MUSIC_THRESHOLD = 0.02;
-    const isPlaying = inputLevel >= MUSIC_THRESHOLD;
 
-    // Phase 1: music time accumulated (0–60%)
-    if (isPlaying) {
-        listenPauseCount = 0;
-        listenMusicSec = Math.min(listenMusicSec + 0.1, MIN_AUDIO_SEC);
-    } else {
-        listenPauseCount += 0.1;
-        if (listenPauseCount <= LISTEN_PAUSE_TOLERANCE) {
-            listenMusicSec = Math.min(listenMusicSec + 0.05, MIN_AUDIO_SEC);
-        } else if (listenMusicSec > 0) {
-            listenMusicSec = Math.max(0, listenMusicSec - 0.15);
-        }
-    }
-    const bufferPct = Math.min(listenMusicSec / MIN_AUDIO_SEC, 1) * 0.6;
+    // Phase 1 (0–60%): are we in a music session?
+    // Uses musicActive (set by silence detection in handleWorkerResult)
+    // rather than per-tick loudness, so brief quiet spots between notes
+    // don't cause the ring to drain mid-tune.
+    const bufferPct = musicActive ? 0.6 : 0;
 
-    // Phase 2: tune locked (60–100%)
+    // Phase 2 (60–100%): tune identified?
     const lockPct = lockedTuneId ? 0.4 : Math.min(lockCount / LOCK_THRESHOLD, 1) * 0.2;
 
     const targetPct = Math.min(bufferPct + lockPct, 1);
@@ -311,10 +298,8 @@ function updateListenRing() {
                 panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
-    } else if (pct >= 0.5) {
+    } else if (musicActive) {
         label.textContent = 'Identifying...';
-    } else if (isPlaying || pct > 0) {
-        label.textContent = 'Keep playing...';
     } else {
         label.textContent = 'Play a tune...';
     }
