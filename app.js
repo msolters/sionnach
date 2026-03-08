@@ -313,9 +313,7 @@ function updateListenRing() {
 
     if (pct >= 1) {
         fill.className = 'listen-ring-fill ready';
-        label.className = 'listen-ring-label active';
-        const entry = lockedTuneId ? tuneById[lockedTuneId] : null;
-        label.textContent = entry ? entry.name : 'Identifying...';
+        label.textContent = 'Current Tune';
         // Scroll to sheet music immediately
         if (lockedTuneId && !autoScrollTimer) {
             autoScrollTimer = true;
@@ -327,19 +325,15 @@ function updateListenRing() {
     } else if (!isPlaying && pct > 0 && pct < 0.5) {
         fill.className = 'listen-ring-fill paused';
         label.textContent = 'Keep playing...';
-        label.className = 'listen-ring-label';
     } else if (pct >= 0.5) {
         fill.className = 'listen-ring-fill';
-        label.className = 'listen-ring-label active';
         label.textContent = 'Identifying...';
     } else if (isPlaying) {
         fill.className = 'listen-ring-fill';
         label.textContent = 'Keep playing...';
-        label.className = 'listen-ring-label active';
     } else {
         fill.className = 'listen-ring-fill';
         label.textContent = 'Play a tune...';
-        label.className = 'listen-ring-label';
     }
 }
 
@@ -1022,9 +1016,15 @@ function renderSheet() {
         foregroundColor: '#c8e0b0',
     });
 
-    $('settingLabel').textContent = `Setting ${sheetSettingIdx + 1} of ${sheetSettings.length}`;
-    $('prevSetting').disabled = sheetSettingIdx === 0;
-    $('nextSetting').disabled = sheetSettingIdx === sheetSettings.length - 1;
+    const settingText = `Setting ${sheetSettingIdx + 1} of ${sheetSettings.length}`;
+    const atFirst = sheetSettingIdx === 0;
+    const atLast = sheetSettingIdx === sheetSettings.length - 1;
+    $('settingLabel').textContent = settingText;
+    $('settingLabelB').textContent = settingText;
+    $('prevSetting').disabled = atFirst;
+    $('nextSetting').disabled = atLast;
+    $('prevSettingB').disabled = atFirst;
+    $('nextSettingB').disabled = atLast;
 }
 
 function hideSheet() {
@@ -1451,11 +1451,24 @@ async function init() {
         document.addEventListener(evt, markActive, { passive: true });
     }
     markActive();  // user just pressed Get Started
-    $('prevSetting').addEventListener('click', () => {
-        if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); }
-    });
-    $('nextSetting').addEventListener('click', () => {
-        if (sheetSettingIdx < sheetSettings.length - 1) { sheetSettingIdx++; renderSheet(); }
+    function prevSettingClick() { if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); } }
+    function nextSettingClick() { if (sheetSettingIdx < sheetSettings.length - 1) { sheetSettingIdx++; renderSheet(); } }
+    $('prevSetting').addEventListener('click', prevSettingClick);
+    $('nextSetting').addEventListener('click', nextSettingClick);
+    $('prevSettingB').addEventListener('click', prevSettingClick);
+    $('nextSettingB').addEventListener('click', nextSettingClick);
+
+    // Mic toggle
+    $('micToggle').addEventListener('click', () => {
+        if (isRecording) {
+            stopRecording();
+            $('micToggle').classList.add('stopped');
+            $('micToggle').title = 'Start microphone';
+        } else {
+            startRecording();
+            $('micToggle').classList.remove('stopped');
+            $('micToggle').title = 'Stop microphone';
+        }
     });
 
     $('sheetRender').addEventListener('click', toggleSheetLock);

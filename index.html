@@ -33,7 +33,34 @@ button {
 button:hover:not(:disabled) { opacity: 0.85; }
 button:disabled { opacity: 0.4; cursor: default; }
 
-/* ---- Level meter + audio status (inside viz-card) ---- */
+/* ---- Audio card header ---- */
+.viz-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 6px;
+}
+.viz-header h3 { font-size: 11px; color: #7a9470; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; margin: 0; }
+.viz-header-right {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 11px; color: #4a6340;
+}
+#audioDevice {
+    max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap;
+}
+#timer {
+    font-family: 'SF Mono', 'Cascadia Code', monospace;
+    font-size: 11px; color: #4a6340; flex-shrink: 0;
+}
+.recording #timer { color: #c45c3e; }
+.mic-btn {
+    padding: 2px 6px; background: none; border: 1px solid #2a3528;
+    border-radius: 6px; font-size: 14px; color: #7a9470;
+    cursor: pointer; line-height: 1; transition: background 0.15s, color 0.15s;
+}
+.mic-btn:hover { background: #2a3528; color: #d4ddd0; }
+.mic-btn.stopped { color: #c45c3e; }
+
+/* ---- Level meter ---- */
 .level-meter {
     height: 3px; background: #0d1a0f; border-radius: 3px;
     margin-top: 8px; overflow: hidden;
@@ -42,19 +69,6 @@ button:disabled { opacity: 0.4; cursor: default; }
     height: 100%; width: 0%; border-radius: 3px;
     background: #4a6340; transition: width 0.1s linear;
 }
-.audio-status {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-top: 6px; font-size: 11px; color: #4a6340;
-}
-#audioDevice {
-    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
-    white-space: nowrap;
-}
-#timer {
-    font-family: 'SF Mono', 'Cascadia Code', monospace;
-    font-size: 11px; color: #4a6340; flex-shrink: 0;
-}
-.recording #timer { color: #c45c3e; }
 
 /* ---- Two-column layout ---- */
 .layout { display: flex; gap: 16px; align-items: flex-start; }
@@ -73,7 +87,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .hero-top { display: flex; align-items: center; gap: 14px; }
 .hero-info { flex: 1; min-width: 0; }
-.hero-label { font-size: 10px; color: #7a9470; text-transform: uppercase; letter-spacing: 1px; }
+.hero-label { font-size: 10px; color: #7a9470; text-transform: uppercase; letter-spacing: 1px; transition: color 0.3s ease; }
 .hero-name {
     font-size: 22px; font-weight: 700; margin: 2px 0; color: #c8e0b0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -123,6 +137,7 @@ button:disabled { opacity: 0.4; cursor: default; }
     text-transform: uppercase; letter-spacing: 1px;
 }
 .sheet-nav { display: flex; align-items: center; gap: 6px; }
+.sheet-nav-bottom { display: none; }
 .sheet-nav-btn {
     width: 28px; height: 28px; padding: 0;
     background: #2a3528; color: #d4ddd0; border-radius: 6px;
@@ -243,19 +258,16 @@ button:disabled { opacity: 0.4; cursor: default; }
     background: #1a2418; border-radius: 12px; padding: 12px;
     margin-bottom: 12px; position: relative; border: 1px solid #2a3528;
 }
-.viz-card h3 { font-size: 11px; color: #7a9470; margin-bottom: 4px; font-weight: 500; text-transform: uppercase; letter-spacing: 1px; }
 .chroma-wrap { position: relative; }
 canvas { display: block; border-radius: 6px; }
 #chromaCanvas { height: 96px; width: 100%; }
 
-/* ---- Listening progress ring (overlaid on chromagram) ---- */
+/* ---- Listening progress ring (inside hero card) ---- */
 .listen-ring {
-    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
-    display: flex; flex-direction: column; align-items: center; gap: 4px;
-    pointer-events: none;
+    flex-shrink: 0;
 }
 .listen-ring-svg {
-    width: 40px; height: 40px; transform: rotate(-90deg); flex-shrink: 0;
+    width: 44px; height: 44px; transform: rotate(-90deg);
 }
 .listen-ring-bg {
     fill: rgba(13, 26, 15, 0.6); stroke: rgba(42, 53, 40, 0.6); stroke-width: 5;
@@ -269,13 +281,6 @@ canvas { display: block; border-radius: 6px; }
 }
 .listen-ring-fill.paused { stroke: #c4973a; }
 .listen-ring-fill.ready { stroke: #6aaa3d; }
-.listen-ring-label {
-    font-size: 11px; color: rgba(122, 148, 112, 0.9);
-    text-align: center;
-    text-shadow: 0 1px 3px rgba(0,0,0,0.8);
-    transition: color 0.3s ease;
-}
-.listen-ring-label.active { color: rgba(200, 224, 176, 0.95); }
 
 /* ---- Session history (main column) ---- */
 .history-card {
@@ -438,8 +443,8 @@ canvas { display: block; border-radius: 6px; }
     /* Hero card */
     .hero { padding: 10px 8px; margin-bottom: 8px; border-radius: 8px; }
     .hero-name { font-size: 16px; white-space: normal; }
-    .hero-top { flex-direction: column; align-items: stretch; gap: 6px; }
-    .hero-link { font-size: 12px; padding: 6px 12px; text-align: center; }
+    .hero-top { gap: 8px; }
+    .hero-link { font-size: 11px; padding: 5px 10px; align-self: flex-start; }
     .hero-stats { gap: 8px; flex-wrap: wrap; }
     .hero-stat-value { font-size: 14px; }
     .hero-stat-label { font-size: 9px; }
@@ -452,13 +457,11 @@ canvas { display: block; border-radius: 6px; }
     .search-card { margin-bottom: 8px; }
 
     /* Listen ring */
-    .listen-ring-svg { width: 32px; height: 32px; }
-    .listen-ring-label { font-size: 10px; }
+    .listen-ring-svg { width: 36px; height: 36px; }
 
     /* Audio visualization */
     .level-meter { margin-bottom: 8px; }
     .viz-card { padding: 6px; margin-bottom: 8px; border-radius: 8px; overflow: hidden; }
-    .viz-card h3 { margin-left: 4px; }
     #chromaCanvas { height: 64px; }
 
     /* Sheet music */
@@ -468,7 +471,11 @@ canvas { display: block; border-radius: 6px; }
     .sheet-render-next { padding: 6px 4px; border-radius: 6px; }
     .sheet-header { flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
     .sheet-header h3 { font-size: 10px; }
-    .sheet-nav { order: 99; width: 100%; justify-content: center; margin-top: 4px; }
+    .sheet-nav-top { display: none; }
+    .sheet-nav-bottom {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 10px; padding-top: 8px; border-top: 1px solid #2a3528;
+    }
     .sheet-nav-btn { width: 32px; height: 32px; font-size: 20px; }
     .sheet-context { font-size: 11px; }
     .sheet-context-name { font-size: 11px; }
@@ -521,24 +528,21 @@ canvas { display: block; border-radius: 6px; }
             <div class="search-results hidden" id="searchResults"></div>
         </div>
 
-        <!-- Chromagram + audio status -->
+        <!-- Audio card -->
         <div class="viz-card">
+            <div class="viz-header">
+                <h3>Audio</h3>
+                <div class="viz-header-right">
+                    <span id="audioDevice"></span>
+                    <span id="timer">0:00</span>
+                    <button class="mic-btn" id="micToggle" title="Stop microphone">&#x1F399;</button>
+                </div>
+            </div>
             <div class="chroma-wrap">
                 <canvas id="chromaCanvas" width="800" height="96"></canvas>
-                <div class="listen-ring" id="listenRing">
-                    <svg class="listen-ring-svg" viewBox="0 0 80 80">
-                        <circle class="listen-ring-bg" cx="40" cy="40" r="34" />
-                        <circle class="listen-ring-fill" id="listenRingFill" cx="40" cy="40" r="34" />
-                    </svg>
-                    <span class="listen-ring-label" id="listenRingLabel">Play a tune...</span>
-                </div>
             </div>
             <div class="level-meter">
                 <div class="level-meter-fill" id="levelFill"></div>
-            </div>
-            <div class="audio-status" id="audioStatus">
-                <span id="audioDevice"></span>
-                <span id="timer">0:00</span>
             </div>
         </div>
 
@@ -547,8 +551,14 @@ canvas { display: block; border-radius: 6px; }
                 <!-- Hero: current tune + metrics -->
                 <div class="hero">
                     <div class="hero-top">
+                        <div class="listen-ring" id="listenRing">
+                            <svg class="listen-ring-svg" viewBox="0 0 80 80">
+                                <circle class="listen-ring-bg" cx="40" cy="40" r="34" />
+                                <circle class="listen-ring-fill" id="listenRingFill" cx="40" cy="40" r="34" />
+                            </svg>
+                        </div>
                         <div class="hero-info">
-                            <div class="hero-label">Current Tune</div>
+                            <div class="hero-label" id="listenRingLabel">Current Tune</div>
                             <div class="hero-name" id="topTuneName">Listening...</div>
                             <div class="hero-meta">
                                 <span class="hero-type" id="topTuneType"></span>
@@ -581,7 +591,7 @@ canvas { display: block; border-radius: 6px; }
                             <span class="sheet-lock-icon" id="sheetLockIcon">&#x1F513;</span>
                             <h3>Sheet Music</h3>
                             <span class="sheet-context" id="sheetContext"></span>
-                            <div class="sheet-nav">
+                            <div class="sheet-nav sheet-nav-top">
                                 <button class="sheet-nav-btn" id="prevSetting">&lsaquo;</button>
                                 <span class="sheet-setting-label" id="settingLabel">Setting 1 of 1</span>
                                 <button class="sheet-nav-btn" id="nextSetting">&rsaquo;</button>
@@ -590,6 +600,11 @@ canvas { display: block; border-radius: 6px; }
                         <div class="sheet-stage">
                             <div class="sheet-render" id="sheetRender"></div>
                             <div class="sheet-render-next" id="sheetRenderNext"></div>
+                        </div>
+                        <div class="sheet-nav sheet-nav-bottom">
+                            <button class="sheet-nav-btn" id="prevSettingB">&lsaquo;</button>
+                            <span class="sheet-setting-label" id="settingLabelB">Setting 1 of 1</span>
+                            <button class="sheet-nav-btn" id="nextSettingB">&rsaquo;</button>
                         </div>
                     </div>
                 </div>
@@ -618,6 +633,6 @@ canvas { display: block; border-radius: 6px; }
 
 <script src="https://cdn.jsdelivr.net/npm/abcjs@6.4.4/dist/abcjs-basic-min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js"></script>
-<script src="app.js?v=2"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>
