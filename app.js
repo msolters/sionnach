@@ -270,6 +270,8 @@ function updateListenRing() {
     const label = $('listenRingLabel');
     fill.style.strokeDashoffset = circumference * (1 - pct);
 
+    const isPaused = !isPlaying && listenPauseCount > 0 && listenProgress > 0;
+
     if (pct >= 1) {
         fill.className = 'listen-ring-fill ready';
         label.className = 'listen-ring-label active';
@@ -279,16 +281,22 @@ function updateListenRing() {
         } else {
             label.textContent = 'Identifying...';
         }
-        // Ring just filled — trigger autoscroll if a tune is loaded
-        if (lockedTuneId && !autoScrollTimer) scheduleAutoScroll();
+        // Ring just filled — scroll to sheet music immediately
+        if (lockedTuneId && !autoScrollTimer) {
+            autoScrollTimer = true; // prevent re-trigger
+            const panel = $('sheetPanel');
+            if (panel.classList.contains('open') && window.scrollY <= 150) {
+                panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        }
+    } else if (isPaused) {
+        fill.className = 'listen-ring-fill paused';
+        label.textContent = 'Keep playing...';
+        label.className = 'listen-ring-label';
     } else if (isPlaying) {
         fill.className = 'listen-ring-fill';
         label.textContent = 'Keep playing...';
         label.className = 'listen-ring-label active';
-    } else if (listenProgress > 0) {
-        fill.className = 'listen-ring-fill paused';
-        label.textContent = 'Keep playing...';
-        label.className = 'listen-ring-label';
     } else {
         fill.className = 'listen-ring-fill';
         label.textContent = 'Play a tune...';
