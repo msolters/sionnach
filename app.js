@@ -1258,7 +1258,7 @@ function updateSheetContext(currentTop) {
     if (currentTempo) parts.push(`${currentTempo} BPM`);
     // Use live confidence from current top prediction if available
     const conf = currentTop ? currentTop.prob : lockedTuneConf;
-    if (conf > 0) parts.push(`<svg class="listen-ring-svg sheet-ring" viewBox="0 0 80 80"><circle class="listen-ring-bg" cx="40" cy="40" r="34"/><circle class="listen-ring-fill" id="sheetRingFill" cx="40" cy="40" r="34"/></svg><span class="ctx-conf">${(conf * 100).toFixed(0)}%</span>`);
+    if (conf > 0) parts.push(`<span class="ctx-conf">${(conf * 100).toFixed(0)}%</span>`);
     el.innerHTML = `<span class="sheet-context-name">${entry.name}</span>` +
         (parts.length ? `<span class="sheet-context-meta">${parts.join(' · ')}</span>` : '');
     el.style.opacity = '';
