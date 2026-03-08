@@ -68,7 +68,7 @@ let lastInteractionTime = 0;     // timestamp of last user touch/click/scroll
 const IDLE_THRESHOLD = 30000;    // 30s of no interaction before autoscroll allowed
 let listenRingTuneId = null;     // tune ID the ring is tracking
 let listenStabilityCount = 0;    // ticks after lock-on for stability verification
-const STABILITY_TICKS = 30;      // ~3s of stability at 100ms ticks
+const STABILITY_TICKS = 10;      // ~1s of stability at 100ms ticks
 let listenRingDisplay = 0;       // smoothed display value (0-1), lerps toward target
 let listenMusicSec = 0;          // seconds of actual music detected (not ambient noise)
 let listenPauseCount = 0;        // consecutive quiet ticks for pause tolerance
@@ -288,12 +288,9 @@ function updateListenRing() {
     const lockPct = Math.min(lockCount / LOCK_THRESHOLD, 1) * 0.3;
 
     // Phase 3: stability after lock-on (80–100%)
-    if (lockedTuneId && lockedTuneId === listenRingTuneId) {
+    // Once a tune is locked, stability fills steadily while music plays
+    if (lockedTuneId && musicActive) {
         listenStabilityCount = Math.min(listenStabilityCount + 1, STABILITY_TICKS);
-    } else if (lockedTuneId) {
-        // New tune locked on — reset stability
-        listenRingTuneId = lockedTuneId;
-        listenStabilityCount = 0;
     }
     const stabilityPct = lockedTuneId ? (listenStabilityCount / STABILITY_TICKS) * 0.2 : 0;
 
@@ -345,9 +342,9 @@ function updateListenRing() {
 function onTopPredictionChanged(newTopId) {
     if (newTopId !== listenRingTuneId) {
         listenRingTuneId = newTopId;
-        listenStabilityCount = 0;
-        // Don't reset listenMusicSec — phase 1 tracks "music is playing"
-        // independent of which tune. Only phases 2-3 reset on tune change.
+        // Decay stability rather than resetting — brief top-1 flickers
+        // shouldn't destroy progress with 5000 classes
+        listenStabilityCount = Math.max(0, listenStabilityCount - 3);
         autoScrollTimer = null;
     }
 }
