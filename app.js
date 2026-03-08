@@ -337,14 +337,11 @@ async function handleWorkerResult(data) {
 
     const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
 
-    // Detect silence/noise: true silence (low RMS) OR mostly noise (spectrally flat).
-    const isSilent = inputLevel < 0.005;
-    let noiseFrames = 0;
-    for (let f = 0; f < nFrames; f++) {
-        if (chromaFlatness(rawEnergy, nFrames, f) > 0.45) noiseFrames++;
-    }
-    const isNoise = noiseFrames > nFrames * 0.9; // 90%+ noise = no melodic content
-    const isQuiet = isSilent || isNoise;
+    // Detect silence via input level. The chromagram noise overlay (drawSilenceOverlay)
+    // handles visual noise labeling independently. For music detection gating, we only
+    // check actual signal level — noise with energy still gets analyzed, which is fine
+    // since the model handles it (predictions will just have low confidence).
+    const isQuiet = inputLevel < 0.005;
     if (isQuiet) {
         silenceCount++;
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
