@@ -303,19 +303,20 @@ function updateListenRing() {
     }
 
     const targetPct = Math.min(bufferPct + lockPct + stabilityPct, 1);
-    // Draining = target is meaningfully below current display
     const draining = targetPct < listenRingDisplay - 0.01;
     const speed = draining ? 0.08 : 0.15;
     listenRingDisplay += (targetPct - listenRingDisplay) * speed;
-    // Snap to target when very close to avoid endless asymptote
     if (Math.abs(targetPct - listenRingDisplay) < 0.005) listenRingDisplay = targetPct;
     const pct = listenRingDisplay;
     fill.style.strokeDashoffset = circumference * (1 - pct);
 
+    // Color: amber when draining, bright green when full, default green otherwise
+    // Use classList so CSS transition on stroke handles the animation
+    fill.classList.toggle('draining', draining && pct > 0 && pct < 1);
+    fill.classList.toggle('ready', pct >= 1);
+
     if (pct >= 1) {
-        fill.className = 'listen-ring-fill ready';
         label.textContent = 'Current Tune';
-        // Scroll to sheet music immediately
         if (lockedTuneId && !autoScrollTimer) {
             autoScrollTimer = true;
             const panel = $('sheetPanel');
@@ -323,17 +324,11 @@ function updateListenRing() {
                 panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
         }
-    } else if (draining) {
-        fill.className = 'listen-ring-fill paused';
-        label.textContent = pct >= 0.5 ? 'Identifying...' : 'Keep playing...';
     } else if (pct >= 0.5) {
-        fill.className = 'listen-ring-fill';
         label.textContent = 'Identifying...';
-    } else if (isPlaying) {
-        fill.className = 'listen-ring-fill';
+    } else if (isPlaying || pct > 0) {
         label.textContent = 'Keep playing...';
     } else {
-        fill.className = 'listen-ring-fill';
         label.textContent = 'Play a tune...';
     }
 }
