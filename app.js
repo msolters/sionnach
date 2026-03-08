@@ -299,9 +299,9 @@ function updateListenRing() {
     } else if (pct >= 0.3) {
         label.textContent = 'Identifying...';
     } else if (musicActive) {
-        label.textContent = 'Listening...';
+        label.textContent = currentConfidence > 0 ? 'Listening...' : '';
     } else {
-        label.textContent = 'Play a tune...';
+        label.textContent = '';
     }
 }
 
@@ -347,12 +347,11 @@ async function handleWorkerResult(data) {
     if (isQuiet) {
         silenceCount++;
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
-            // Transition from music to silence — freeze display, keep last prediction showing
             musicActive = false;
             lockCount = 0;
             sheetFetchId = null;
             currentConfidence = 0;
-            // Halve the rolling window so stale guesses fade when music returns
+            clearHeroTune('Silence');
             if (recentProbs.length > 2) {
                 recentProbs = recentProbs.slice(-Math.ceil(recentProbs.length / 2));
             }
@@ -360,11 +359,11 @@ async function handleWorkerResult(data) {
     } else {
         silenceCount = 0;
         if (!musicActive) {
-            // Transition from silence to music — resume analysis
             musicActive = true;
             lockCount = 0;
             sheetFetchId = null;
             recentProbs = [];
+            clearHeroTune('Listening...');
         }
     }
 
@@ -488,9 +487,15 @@ async function handleWorkerResult(data) {
     const ratio = secondProb > 0 ? topConsensusProb / secondProb : (topConsensusProb > 0 ? 10 : 0);
     currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
 
-    // When confidence drops to zero, clear hero — we're no longer certain
+    // Show detection state when not confident
     if (currentConfidence < 0.01) {
-        clearHeroTune(musicActive ? 'Listening...' : '');
+        if (!musicActive) {
+            clearHeroTune('Silence');
+        } else if (topProb < CONFIDENCE_FLOOR) {
+            clearHeroTune('Noise');
+        } else {
+            clearHeroTune('Listening...');
+        }
     }
 
     // Only update displayed predictions when above confidence floor
