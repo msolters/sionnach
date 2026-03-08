@@ -303,14 +303,13 @@ function updateListenRing() {
     }
 
     const targetPct = Math.min(bufferPct + lockPct + stabilityPct, 1);
-    // Smooth toward target: fast when increasing, moderate when decreasing
-    const prevDisplay = listenRingDisplay;
-    const speed = targetPct > listenRingDisplay ? 0.15 : 0.08;
+    // Draining = target is meaningfully below current display
+    const draining = targetPct < listenRingDisplay - 0.01;
+    const speed = draining ? 0.08 : 0.15;
     listenRingDisplay += (targetPct - listenRingDisplay) * speed;
     // Snap to target when very close to avoid endless asymptote
     if (Math.abs(targetPct - listenRingDisplay) < 0.005) listenRingDisplay = targetPct;
     const pct = listenRingDisplay;
-    const draining = pct < prevDisplay - 0.002 && pct > 0;
     fill.style.strokeDashoffset = circumference * (1 - pct);
 
     if (pct >= 1) {
