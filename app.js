@@ -766,6 +766,45 @@ function formatKey(keyStr) {
     return m[1] + ' ' + (modeNames[m[2].toLowerCase()] || m[2]);
 }
 
+function updateQuickMatches(predictions) {
+    const container = $('quickMatches');
+    if (!container) return;
+    const top3 = predictions.slice(0, 3);
+    const sorted = [...top3].sort((a, b) => a.name.localeCompare(b.name));
+    const maxProb = predictions[0]?.prob || 0;
+    const topId = predictions[0]?.id;
+
+    for (let i = 0; i < sorted.length; i++) {
+        const p = sorted[i];
+        let pill = container.children[i];
+        if (!pill) {
+            pill = document.createElement('button');
+            pill.className = 'quick-pill';
+            pill.innerHTML = '<div class="quick-pill-fill"></div><span class="quick-pill-name"></span>';
+            pill.addEventListener('click', () => {
+                const tuneId = parseInt(pill.dataset.tuneId, 10);
+                if (!tuneId) return;
+                lockedTuneId = null;
+                loadSheetForTune(tuneId);
+                $('topTuneName').textContent = pill.dataset.tuneName;
+                renderHistory();
+            });
+            container.appendChild(pill);
+        }
+        pill.dataset.tuneId = p.id;
+        pill.dataset.tuneName = p.name;
+        const nameEl = pill.querySelector('.quick-pill-name');
+        if (nameEl.textContent !== p.name) nameEl.textContent = p.name;
+        const fillW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
+        pill.querySelector('.quick-pill-fill').style.width = fillW + '%';
+        pill.classList.toggle('pill-top', p.id === topId);
+    }
+    // Remove extra pills
+    while (container.children.length > sorted.length) {
+        container.removeChild(container.lastChild);
+    }
+}
+
 function renderResults(predictions) {
     if (!predictions || !predictions.length) return;
 
@@ -792,6 +831,9 @@ function renderResults(predictions) {
         $('metricTimeSig').textContent = '--';
     }
     $('metricTempo').textContent = currentTempo ? `${currentTempo}` : '--';
+
+    // Quick match pills (simple mode)
+    updateQuickMatches(predictions);
 
     // Update existing prediction bars/percentages every cycle (smooth animations)
     const list = $('predictionsList');
