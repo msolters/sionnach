@@ -13,12 +13,26 @@
  *   or resample from the native rate using the same linear interpolation
  *   algorithm from audio-processor.js.
  */
+import { Animated } from 'react-native';
 import { SAMPLE_RATE, MAX_AUDIO_SEC } from '../constants';
 
 // Buffer management (mirrors app.js audioSamples array)
 let audioChunks: Float32Array[] = [];
 let totalSamples = 0;
 let inputLevel = 0;
+
+
+/**
+ * Shared animated value for the ListenRing visualization.
+ * Updated directly from the audio callback — bypasses React state/render
+ * so the ring stays responsive even when the JS thread is busy with DSP.
+ *
+ * Value range: 0-1 (adaptively normalized audio level).
+ */
+export const normalizedLevelAnim = new Animated.Value(0);
+
+// Adaptive normalization state for the ring
+let emaLevelForRing = 0.01;
 
 export function getInputLevel(): number {
   return inputLevel;
@@ -48,6 +62,8 @@ export function clearAudioBuffer(): void {
   audioChunks = [];
   totalSamples = 0;
   inputLevel = 0;
+  emaLevelForRing = 0.01;
+  normalizedLevelAnim.setValue(0);
 }
 
 /**
@@ -58,10 +74,20 @@ export function onAudioData(pcmData: Float32Array): void {
   audioChunks.push(pcmData);
   totalSamples += pcmData.length;
 
-  // Compute RMS level
+  // Compute RMS level with exponential smoothing for fluid response
   let sum = 0;
   for (let i = 0; i < pcmData.length; i++) sum += pcmData[i] * pcmData[i];
-  inputLevel = Math.sqrt(sum / pcmData.length);
+  const rms = Math.sqrt(sum / pcmData.length);
+  // Smoothing: fast attack (0.6), slow decay (0.15) — feels responsive but not jittery
+  const alpha = rms > inputLevel ? 0.6 : 0.15;
+  inputLevel = inputLevel + alpha * (rms - inputLevel);
+
+  // Adaptive normalization for ring visualization — direct Animated.Value update
+  // bypasses React state so the ring responds even when DSP is running
+  emaLevelForRing = emaLevelForRing + 0.08 * (inputLevel - emaLevelForRing);
+  const baseline = Math.max(emaLevelForRing, 0.005);
+  const normalized = Math.min(inputLevel / (baseline * 2), 1);
+  normalizedLevelAnim.setValue(normalized);
 
   // Compact if too large
   const max = MAX_AUDIO_SEC * SAMPLE_RATE;

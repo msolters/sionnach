@@ -40,31 +40,53 @@ export interface EnsembleResult {
 
 /**
  * Run ensemble inference: standard + foreground chromagram paths.
- * Mirrors the handleInferenceResult logic in app.js.
+ *
+ * Matches web app behavior (inference-worker.js):
+ * - Both present: combined[i] = std[i]*W_STD + fg[i]*W_FG per window
+ * - Only std: combined[i] = std[i] (100% standard)
+ * - Only fg: combined[i] = fg[i] (100% foreground)
+ *
+ * On mobile, the pipeline alternates between std-only and fg-only cycles,
+ * so the consensus window accumulates both types over time.
  */
 export async function runEnsembleInference(
   tensorsStd: Float32Array[],
   tensorsFg: Float32Array[]
 ): Promise<EnsembleResult> {
-  const probsStd = await inferWindows(tensorsStd);
-  const probsFg = tensorsFg.length > 0 ? await inferWindows(tensorsFg) : [];
+  const hasStd = tensorsStd.length > 0;
+  const hasFg = tensorsFg.length > 0;
 
-  const nClasses = probsStd[0].length;
+  let t0 = Date.now();
+  const probsStd = hasStd ? await inferWindows(tensorsStd) : [];
+  if (hasStd) console.log(`  Inference-std (${tensorsStd.length} windows): ${Date.now() - t0}ms`);
 
-  // Average standard probs across windows
-  const avgStd = new Float32Array(nClasses);
-  for (const p of probsStd) for (let i = 0; i < nClasses; i++) avgStd[i] += p[i];
-  for (let i = 0; i < nClasses; i++) avgStd[i] /= probsStd.length;
+  t0 = Date.now();
+  const probsFg = hasFg ? await inferWindows(tensorsFg) : [];
+  if (hasFg) console.log(`  Inference-fg (${tensorsFg.length} windows): ${Date.now() - t0}ms`);
 
-  // Combine with foreground
+  const refProbs = hasStd ? probsStd[0] : probsFg[0];
+  const nClasses = refProbs.length;
   const avg = new Float32Array(nClasses);
-  if (probsFg.length > 0) {
-    const avgFg = new Float32Array(nClasses);
-    for (const p of probsFg) for (let i = 0; i < nClasses; i++) avgFg[i] += p[i];
-    for (let i = 0; i < nClasses; i++) avgFg[i] /= probsFg.length;
-    for (let i = 0; i < nClasses; i++) avg[i] = avgStd[i] * WEIGHT_STD + avgFg[i] * WEIGHT_FG;
+
+  if (hasStd && hasFg) {
+    // Both paths: per-window ensemble then average (matches web app)
+    const nWindows = Math.max(probsStd.length, probsFg.length);
+    for (let w = 0; w < nWindows; w++) {
+      const pStd = w < probsStd.length ? probsStd[w] : probsStd[probsStd.length - 1];
+      const pFg = w < probsFg.length ? probsFg[w] : pStd; // fallback to std if fewer fg windows
+      for (let i = 0; i < nClasses; i++) {
+        avg[i] += pStd[i] * WEIGHT_STD + pFg[i] * WEIGHT_FG;
+      }
+    }
+    for (let i = 0; i < nClasses; i++) avg[i] /= nWindows;
+  } else if (hasStd) {
+    // Standard only — average across windows
+    for (const p of probsStd) for (let i = 0; i < nClasses; i++) avg[i] += p[i];
+    for (let i = 0; i < nClasses; i++) avg[i] /= probsStd.length;
   } else {
-    for (let i = 0; i < nClasses; i++) avg[i] = avgStd[i];
+    // Foreground only — average across windows
+    for (const p of probsFg) for (let i = 0; i < nClasses; i++) avg[i] += p[i];
+    for (let i = 0; i < nClasses; i++) avg[i] /= probsFg.length;
   }
 
   return { avg, nClasses };

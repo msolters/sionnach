@@ -573,14 +573,23 @@ function handleInferenceResult({ probsStd, probsFg, requestId }) {
     const windowLen = recentProbs.length;
     for (let i = 0; i < nClasses; i++) consensus[i] /= windowLen;
 
-    const indices = Array.from({ length: nClasses }, (_, i) => i);
-    indices.sort((a, b) => consensus[b] - consensus[a]);
+    // Merge class scores by tune_id (key-split models have multiple classes per tune)
+    const tuneMerged = {};   // tuneId -> { prob, bestIdx }
+    for (let i = 0; i < nClasses; i++) {
+        const tuneId = tuneIndex[i]?.id;
+        if (tuneId == null) continue;
+        if (!tuneMerged[tuneId] || consensus[i] > tuneMerged[tuneId].prob) {
+            tuneMerged[tuneId] = { prob: consensus[i], bestIdx: i };
+        }
+    }
+    const mergedEntries = Object.values(tuneMerged);
+    mergedEntries.sort((a, b) => b.prob - a.prob);
 
-    const topProb = consensus[indices[0]];
+    const topProb = mergedEntries[0]?.prob || 0;
 
     // Update confidence (drives the ring)
-    const topConsensusProb = consensus[indices[0]];
-    const secondProb = consensus[indices[1]] || 0;
+    const topConsensusProb = mergedEntries[0]?.prob || 0;
+    const secondProb = mergedEntries[1]?.prob || 0;
     const ratio = secondProb > 0 ? topConsensusProb / secondProb : (topConsensusProb > 0 ? 10 : 0);
     currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
 
@@ -609,12 +618,12 @@ function handleInferenceResult({ probsStd, probsFg, requestId }) {
     }
 
     if (!isNoise && topProb >= CONFIDENCE_FLOOR) {
-        const predictions = indices.slice(0, 10).map((idx, rank) => ({
+        const predictions = mergedEntries.slice(0, 10).map((entry, rank) => ({
             rank: rank + 1,
-            prob: consensus[idx],
-            id: tuneIndex[idx]?.id,
-            name: tuneIndex[idx]?.name || `Unknown #${idx}`,
-            type: tuneIndex[idx]?.type || '',
+            prob: entry.prob,
+            id: tuneIndex[entry.bestIdx]?.id,
+            name: tuneIndex[entry.bestIdx]?.name || `Unknown`,
+            type: tuneIndex[entry.bestIdx]?.type || '',
         }));
 
         renderResults(predictions);

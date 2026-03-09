@@ -1,0 +1,19 @@
+# Test files
+__tests__/
+*.test.ts
+*.test.tsx
+*.spec.ts
+
+# Development files
+.expo/
+.vscode/
+
+# Web build output (not needed for native)
+web-build/
+
+# Git
+.git/
+
+# OS files
+.DS_Store
+Thumbs.db

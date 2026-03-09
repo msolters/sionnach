@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useRef, useEffect } from 'react';
+import { View, Text, Pressable, StyleSheet, Animated, Easing } from 'react-native';
 import type { Prediction } from '../types';
 
 interface Props {
@@ -10,11 +10,65 @@ interface Props {
   onSelect: (tuneId: number, tuneName: string) => void;
 }
 
-/**
- * Top-3 quick match pills with stable slot positions.
- * Matches web app behavior exactly.
- */
-export function QuickMatchPills({ predictions, confidence, lockedTuneId, sheetTuneId, onSelect }: Props) {
+const AnimatedPill = React.memo(function AnimatedPill({
+  prediction,
+  fillWidth,
+  isTop,
+  isSheet,
+  confidence,
+  onPress,
+}: {
+  prediction: Prediction;
+  fillWidth: number;
+  isTop: boolean;
+  isSheet: boolean;
+  confidence: number;
+  onPress: () => void;
+}) {
+  const fillAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(fillAnim, {
+      toValue: fillWidth,
+      duration: 400,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [fillWidth, fillAnim]);
+
+  const isDraining = isTop && confidence < 0.5 && confidence > 0;
+  const isReady = isTop && confidence >= 0.72;
+
+  const borderColor = isTop ? (isReady ? '#6aaa3d' : isDraining ? '#c4973a' : '#6aaa3d')
+    : '#2a3528';
+
+  const nameColor = isTop
+    ? (isReady ? '#6aaa3d' : isDraining ? '#c4973a' : '#6aaa3d')
+    : '#c8e0b0';
+
+  const fillBg = isTop
+    ? (isReady ? 'rgba(106,170,61,0.18)' : isDraining ? 'rgba(196,151,58,0.15)' : 'rgba(106,170,61,0.12)')
+    : 'rgba(76,140,48,0.12)';
+
+  const animWidth = fillAnim.interpolate({
+    inputRange: [0, 100],
+    outputRange: ['0%', '100%'],
+  });
+
+  return (
+    <Pressable style={[styles.pill, { borderColor }]} onPress={onPress}>
+      <Animated.View style={[styles.fill, { width: animWidth, backgroundColor: fillBg }]} />
+      {isSheet && <Text style={styles.sheetIcon}>{'\u266B'}</Text>}
+      <Text style={[styles.name, { color: nameColor }]} numberOfLines={1}>
+        {prediction.name}
+      </Text>
+    </Pressable>
+  );
+});
+
+export const QuickMatchPills = React.memo(function QuickMatchPills({
+  predictions, confidence, lockedTuneId, sheetTuneId, onSelect,
+}: Props) {
   const slots = useRef<(number | null)[]>([null, null, null]);
   const top3 = predictions.slice(0, 3);
   const top3Ids = new Set(top3.map(p => p.id));
@@ -22,14 +76,12 @@ export function QuickMatchPills({ predictions, confidence, lockedTuneId, sheetTu
   const topId = predictions[0]?.id;
   const maxProb = predictions[0]?.prob || 0;
 
-  // Vacate slots no longer in top 3
   for (let i = 0; i < 3; i++) {
     if (slots.current[i] !== null && !top3Ids.has(slots.current[i]!)) {
       slots.current[i] = null;
     }
   }
 
-  // Assign new tunes to empty slots (alphabetical, leftmost first)
   const placed = new Set(slots.current.filter(id => id !== null));
   const newTunes = top3.filter(p => !placed.has(p.id))
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -48,45 +100,25 @@ export function QuickMatchPills({ predictions, confidence, lockedTuneId, sheetTu
         if (!p) return <View key={`empty-${i}`} style={styles.pillEmpty} />;
 
         const isTop = p.id === topId;
-        const isSheet = p.id === sheetTuneId;
-        const isLocked = p.id === lockedTuneId;
-
-        // Top pill fill mirrors ring display; others use probability ratio
         const fillW = isTop
           ? Math.min(confidence, 1) * 100
           : (maxProb > 0 ? (p.prob / maxProb * 100) : 0);
 
-        // Color states match web app
-        const isDraining = isTop && confidence < 0.5 && confidence > 0;
-        const isReady = isTop && confidence >= 0.99;
-
-        const borderColor = isLocked ? '#6ba3d6'
-          : isTop ? (isReady ? '#6aaa3d' : isDraining ? '#c4973a' : '#6aaa3d')
-            : '#2a3528';
-
-        const nameColor = isTop
-          ? (isReady ? '#6aaa3d' : isDraining ? '#c4973a' : '#6aaa3d')
-          : '#c8e0b0';
-
-        const fillBg = isTop
-          ? (isReady ? 'rgba(106,170,61,0.18)' : isDraining ? 'rgba(196,151,58,0.15)' : 'rgba(106,170,61,0.12)')
-          : 'rgba(76,140,48,0.12)';
-
         return (
-          <Pressable
+          <AnimatedPill
             key={`pill-${i}`}
-            style={[styles.pill, { borderColor }]}
+            prediction={p}
+            fillWidth={fillW}
+            isTop={isTop}
+            isSheet={p.id === sheetTuneId}
+            confidence={confidence}
             onPress={() => onSelect(p.id, p.name)}
-          >
-            <View style={[styles.fill, { width: `${fillW}%`, backgroundColor: fillBg }]} />
-            {isSheet && <Text style={styles.sheetIcon}>{'\u266B'}</Text>}
-            <Text style={[styles.name, { color: nameColor }]} numberOfLines={1}>{p.name}</Text>
-          </Pressable>
+          />
         );
       })}
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   container: {
@@ -101,7 +133,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2a3528',
     borderRadius: 20,
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 14,
     flexDirection: 'row',
     alignItems: 'center',
@@ -125,7 +157,7 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
     color: '#c8e0b0',
     flex: 1,
     textAlign: 'center',

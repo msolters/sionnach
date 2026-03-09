@@ -1,4 +1,5 @@
 import { HPSS_KERNEL } from '../constants';
+import { isDSPCancelled } from './stft';
 
 let _medianSortBuf = new Float32Array(HPSS_KERNEL);
 
@@ -20,9 +21,16 @@ export function median1d(
   return out;
 }
 
-export function hpss(
+/** Yield the JS thread */
+function yieldToUI(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+const CHUNK_SIZE = 50; // bins or frames per batch
+
+export async function hpss(
   mag: Float32Array, nFrames: number, nBins: number
-): Float32Array {
+): Promise<Float32Array> {
   // Harmonic: median along time for each frequency bin
   const harmonic = new Float32Array(nBins * nFrames);
   const medOutH = new Float32Array(Math.max(nFrames, nBins));
@@ -30,7 +38,15 @@ export function hpss(
     const row = mag.subarray(b * nFrames, b * nFrames + nFrames);
     median1d(row, nFrames, HPSS_KERNEL, medOutH);
     harmonic.set(medOutH.subarray(0, nFrames), b * nFrames);
+
+    if ((b + 1) % CHUNK_SIZE === 0) {
+      if (isDSPCancelled()) return harmonic; // bail out
+      await yieldToUI();
+    }
   }
+
+  if (isDSPCancelled()) return harmonic;
+  await yieldToUI();
 
   // Percussive: median along frequency for each time frame
   const percussive = new Float32Array(nBins * nFrames);
@@ -40,7 +56,15 @@ export function hpss(
     for (let b = 0; b < nBins; b++) col[b] = mag[b * nFrames + f];
     median1d(col, nBins, HPSS_KERNEL, medOutP);
     for (let b = 0; b < nBins; b++) percussive[b * nFrames + f] = medOutP[b];
+
+    if ((f + 1) % CHUNK_SIZE === 0) {
+      if (isDSPCancelled()) return harmonic;
+      await yieldToUI();
+    }
   }
+
+  if (isDSPCancelled()) return harmonic;
+  await yieldToUI();
 
   // Soft mask: H_mask = H^2 / (H^2 + P^2 + eps)
   const harmonicMasked = new Float32Array(nBins * nFrames);

@@ -77,10 +77,10 @@ function removeDrone(chroma: Float32Array, nFrames: number): Float32Array {
   return out;
 }
 
-export function processForeground(
+export async function processForeground(
   mag: Float32Array, nFrames: number, nBins: number
-): Float32Array {
-  const harmonicSpec = hpss(mag, nFrames, nBins);
+): Promise<Float32Array> {
+  const harmonicSpec = await hpss(mag, nFrames, nBins);
   const chroma = specToChroma(harmonicSpec, nFrames, nBins, chromaFB_melody!);
   const deDroned = removeDrone(chroma, nFrames);
   const filtered = medianFilter(deDroned, nFrames);

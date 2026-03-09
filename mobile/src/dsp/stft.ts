@@ -4,6 +4,12 @@ import type { STFTResult } from '../types';
 
 let hannWindow: Float32Array | null = null;
 
+/** Shared cancellation flag — set true to abort DSP mid-computation */
+let _cancelled = false;
+export function cancelDSP(): void { _cancelled = true; }
+export function resetDSPCancel(): void { _cancelled = false; }
+export function isDSPCancelled(): boolean { return _cancelled; }
+
 export function initHannWindow(): void {
   hannWindow = new Float32Array(N_FFT);
   for (let i = 0; i < N_FFT; i++) {
@@ -11,7 +17,18 @@ export function initHannWindow(): void {
   }
 }
 
-export function computeSTFT(samples: Float32Array): STFTResult | null {
+/** Yield the JS thread so UI animations and audio callbacks can run */
+function yieldToUI(): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+/**
+ * Async STFT — processes frames in batches of CHUNK_SIZE, yielding
+ * between batches so the UI thread stays responsive.
+ */
+const CHUNK_SIZE = 40; // ~40 frames per batch ≈ 20-40ms per chunk
+
+export async function computeSTFT(samples: Float32Array): Promise<STFTResult | null> {
   if (!hannWindow) initHannWindow();
 
   const n = samples.length;
@@ -36,6 +53,12 @@ export function computeSTFT(samples: Float32Array): STFTResult | null {
     fft(re, im);
     for (let b = 0; b < nBins; b++) {
       mag[b * nFrames + f] = re[b] * re[b] + im[b] * im[b];
+    }
+
+    // Yield every CHUNK_SIZE frames
+    if ((f + 1) % CHUNK_SIZE === 0) {
+      if (_cancelled) return null;
+      await yieldToUI();
     }
   }
 

@@ -47,7 +47,13 @@
           }
         }
       ],
-      "./plugins/withOnnxruntimeFix"
+      "./plugins/withOnnxruntimeFix",
+      [
+        "@siteed/expo-audio-studio",
+        {
+          "microphonePermission": "Sionnach needs microphone access to identify Irish tunes being played nearby."
+        }
+      ]
     ],
     "extra": {
       "router": {
