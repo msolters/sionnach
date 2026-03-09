@@ -132,14 +132,14 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .sheet-panel.open .sheet-panel-inner { padding: 14px 16px; }
 .sheet-header {
-    display: flex; align-items: center; justify-content: center;
+    display: flex; align-items: center; justify-content: space-between;
     gap: 10px; margin-bottom: 8px;
 }
 .sheet-header h3 {
     font-size: 11px; color: #7a9470; font-weight: 500;
     text-transform: uppercase; letter-spacing: 1px;
 }
-.sheet-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+.sheet-nav { display: flex; align-items: center; gap: 6px; flex: 1; justify-content: flex-end; }
 .sheet-nav-bottom { display: none; }
 .sheet-nav-btn {
     width: 28px; height: 28px; padding: 0;
@@ -149,11 +149,14 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .sheet-setting-label { font-size: 11px; color: #7a9470; min-width: 80px; text-align: center; }
 .sheet-lock-icon {
-    font-size: 11px; flex-shrink: 0;
+    font-size: 11px;
     color: #7a9470; transition: all 0.15s;
     font-family: 'SF Mono', 'Cascadia Code', monospace;
     background: none; border: none; padding: 2px 6px; border-radius: 4px;
     cursor: default;
+}
+.sheet-lock-spacer {
+    flex: 1; min-width: 0;
 }
 .sheet-lock-icon.locked {
     color: #6ba3d6; font-weight: 600;
@@ -736,7 +739,9 @@ body:not(.advanced) .viz-card {
                 <div class="sheet-panel" id="sheetPanel">
                     <div class="sheet-panel-inner">
                         <div class="sheet-header">
-                            <button class="sheet-lock-icon" id="sheetLockIcon"></button>
+                            <div class="sheet-lock-spacer">
+                                <button class="sheet-lock-icon" id="sheetLockIcon"></button>
+                            </div>
                             <span class="sheet-context" id="sheetContext">
                                 <span class="sheet-context-name" id="sheetCtxName"></span>
                                 <span class="sheet-context-meta" id="sheetCtxMeta"></span>

@@ -94,6 +94,9 @@ const LOCK_TAP_SEC = 30;        // seconds added per tap
 // Temporal smoothing: EMA over prediction scores across analysis cycles
 const CONSENSUS_WINDOW = 8;      // rolling window size (~8 seconds at 1s intervals)
 const CONFIDENCE_FLOOR = 0.02;   // below this top prob = "not confident" (noise/silence)
+const NOISE_CONFIDENCE = 0.15;   // dominance ratio below this = noise (no clear winner)
+const NOISE_CYCLES = 3;          // consecutive low-confidence cycles before declaring noise
+let noiseCount = 0;              // consecutive cycles with low confidence
 let recentProbs = [];             // circular buffer of recent probability vectors
 let pendingPredictions = null;    // latest predictions waiting to be flushed
 let predsDebounceTimer = null;    // debounce timer for predictions list
@@ -222,6 +225,7 @@ async function startRecording() {
     musicActive = false;
     silenceCount = 0;
     lockCount = 0;
+    noiseCount = 0;
     sheetFetchId = null;
     clearHeroTune();
     $('metricTempo').textContent = '--';
@@ -441,6 +445,7 @@ function handleWorkerResult(data) {
         if (silenceCount >= SILENCE_CYCLES && musicActive) {
             musicActive = false;
             lockCount = 0;
+            noiseCount = 0;
             sheetFetchId = null;
             currentConfidence = 0;
             clearHeroTune('Silence');
@@ -453,6 +458,7 @@ function handleWorkerResult(data) {
         if (!musicActive) {
             musicActive = true;
             lockCount = 0;
+            noiseCount = 0;
             sheetFetchId = null;
             recentProbs = [];
             clearHeroTune('Listening...');
@@ -578,17 +584,31 @@ function handleInferenceResult({ probsStd, probsFg, requestId }) {
     const ratio = secondProb > 0 ? topConsensusProb / secondProb : (topConsensusProb > 0 ? 10 : 0);
     currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
 
-    if (currentConfidence < 0.01) {
-        if (!musicActive) {
-            clearHeroTune('Silence');
-        } else if (topProb < CONFIDENCE_FLOOR) {
+    // Noise detection: low confidence = no clear winner among tunes
+    const isNoise = topProb < CONFIDENCE_FLOOR || currentConfidence < NOISE_CONFIDENCE;
+
+    if (isNoise) {
+        noiseCount++;
+        if (noiseCount >= NOISE_CYCLES) {
             clearHeroTune('Noise');
-        } else {
-            clearHeroTune('Listening...');
+            lockCount = 0;
+            // Dismiss sheet music and pills unless user has locked it
+            if (!sheetLocked) {
+                if ($('sheetPanel').classList.contains('open')) hideSheet();
+                pillSlots = [null, null, null];
+                const qm = $('quickMatches');
+                if (qm) for (const p of qm.children) p.style.display = 'none';
+            }
+        } else if (currentConfidence < 0.01) {
+            // Transitional: not yet declared noise, but no confidence
+            if (!musicActive) clearHeroTune('Silence');
+            else clearHeroTune('Listening...');
         }
+    } else {
+        noiseCount = 0;
     }
 
-    if (topProb >= CONFIDENCE_FLOOR) {
+    if (!isNoise && topProb >= CONFIDENCE_FLOOR) {
         const predictions = indices.slice(0, 10).map((idx, rank) => ({
             rank: rank + 1,
             prob: consensus[idx],
@@ -1335,6 +1355,8 @@ function unlockSheet() {
 function updateLockUI() {
     const icon = $('sheetLockIcon');
     const render = $('sheetRender');
+    const header = icon.closest('.sheet-header');
+
     if (sheetLocked && lockTimeRemaining > 0) {
         const mins = Math.floor(lockTimeRemaining / 60);
         const secs = lockTimeRemaining % 60;
@@ -1342,15 +1364,19 @@ function updateLockUI() {
         icon.innerHTML = `\u{23F2} ${timeStr} <kbd class="lock-kbd">SPACE</kbd> extend · <span class="lock-dismiss">ESC</span> dismiss`;
         icon.className = 'sheet-lock-icon locked';
         render.classList.add('locked');
+        header.classList.add('header-locked');
     } else if (sheetLocked) {
         icon.innerHTML = `\u{23F2} <kbd class="lock-kbd">SPACE</kbd> extend · <span class="lock-dismiss">ESC</span> dismiss`;
         icon.className = 'sheet-lock-icon locked';
         render.classList.add('locked');
+        header.classList.add('header-locked');
     } else {
         icon.textContent = '';
         icon.className = 'sheet-lock-icon';
         render.classList.remove('locked');
+        header.classList.remove('header-locked');
     }
+
 }
 
 
