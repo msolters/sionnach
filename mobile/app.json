@@ -46,7 +46,8 @@
             "minSdkVersion": 24
           }
         }
-      ]
+      ],
+      "./plugins/withOnnxruntimeFix"
     ],
     "extra": {
       "router": {
