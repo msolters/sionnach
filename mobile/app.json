@@ -35,6 +35,14 @@
         {
           "microphonePermission": "Sionnach needs microphone access to identify Irish tunes being played nearby."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "kotlinVersion": "1.9.25"
+          }
+        }
       ]
     ],
     "extra": {
