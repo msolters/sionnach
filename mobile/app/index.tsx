@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, SafeAreaView, ActivityIndicator,
-  Platform,
+  Platform, StatusBar,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import LiveAudioStream from 'react-native-live-audio-stream';
@@ -34,17 +34,21 @@ function base64ToFloat32(base64: string): Float32Array {
 // Base URL for loading assets from the web app deployment
 const WEB_BASE_URL = 'https://msolters.github.io/sionnach';
 
+const STATUSBAR_HEIGHT = StatusBar.currentHeight ?? 0;
+
 type AppPhase = 'loading' | 'ready' | 'error';
 
 export default function HomeScreen() {
   const [phase, setPhase] = useState<AppPhase>('loading');
   const [loadStatus, setLoadStatus] = useState('Initializing...');
   const [recording, setRecording] = useState(false);
+  const [inputLevel, setInputLevel] = useState(0);
   const [sheetAbc, setSheetAbc] = useState('');
   const [sheetTuneId, setSheetTuneId] = useState<number | null>(null);
 
   const { state, processSamples, reset } = useTuneIdentifier();
   const analysisTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const levelTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load all resources on mount
   useEffect(() => {
@@ -83,13 +87,19 @@ export default function HomeScreen() {
   // Start/stop recording
   const toggleRecording = useCallback(async () => {
     if (recording) {
-      // Stop
+      // Stop — remove listener before stopping to prevent stale callbacks
       LiveAudioStream.stop();
+      (LiveAudioStream as any).removeAllListeners?.('data');
       setRecording(false);
       if (analysisTimer.current) {
         clearInterval(analysisTimer.current);
         analysisTimer.current = null;
       }
+      if (levelTimer.current) {
+        clearInterval(levelTimer.current);
+        levelTimer.current = null;
+      }
+      setInputLevel(0);
       clearAudioBuffer();
       reset();
     } else {
@@ -125,6 +135,12 @@ export default function HomeScreen() {
       LiveAudioStream.start();
 
       setRecording(true);
+
+      // Poll input level at ~15fps for visual feedback
+      levelTimer.current = setInterval(() => {
+        setInputLevel(getInputLevel());
+      }, 66);
+
       analysisTimer.current = setInterval(runAnalysis, ANALYSIS_INTERVAL_MS);
     }
   }, [recording, runAnalysis, reset]);
@@ -165,18 +181,29 @@ export default function HomeScreen() {
   const top = state.predictions[0] ?? null;
   const tuneEntry = top ? getTuneById(top.id) : undefined;
 
+  // Audio level bar: scale 0-1, clamped
+  const levelWidth = Math.min(1, inputLevel * 8); // amplify for visibility
+
   return (
     <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#0d1a0f" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
         <Text style={styles.title}>Sionnach</Text>
 
         <HeroCard
           top={top}
           confidence={state.confidence}
-          status={state.status}
+          status={recording ? state.status || 'listening' : 'idle'}
           tempo={state.tempo}
           tuneKey={tuneEntry?.key}
         />
+
+        {/* Audio level indicator */}
+        {recording && (
+          <View style={styles.levelContainer}>
+            <View style={[styles.levelBar, { width: `${levelWidth * 100}%` }]} />
+          </View>
+        )}
 
         <View style={styles.micRow}>
           <MicButton recording={recording} onPress={toggleRecording} />
@@ -200,7 +227,11 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0d1a0f' },
+  container: {
+    flex: 1,
+    backgroundColor: '#0d1a0f',
+    paddingTop: Platform.OS === 'android' ? STATUSBAR_HEIGHT : 0,
+  },
   scroll: { flex: 1 },
   scrollContent: { padding: 16, gap: 12 },
   splash: {
@@ -208,6 +239,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     gap: 16,
+    paddingTop: Platform.OS === 'android' ? STATUSBAR_HEIGHT : 0,
   },
   title: {
     fontSize: 24,
@@ -226,6 +258,17 @@ const styles = StyleSheet.create({
     color: '#5a7a50',
     textAlign: 'center',
     marginTop: 8,
+  },
+  levelContainer: {
+    height: 4,
+    backgroundColor: '#1a2a1a',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  levelBar: {
+    height: '100%',
+    backgroundColor: '#4c8c30',
+    borderRadius: 2,
   },
   micRow: {
     alignItems: 'center',
