@@ -5,42 +5,32 @@ let tuneById: Map<number, TuneEntry> = new Map();
 let tuneEntries: TuneEntry[] = [];
 
 /**
- * Load tune index from the web app's assets URL.
- * The tune_index.json and label_map.json are hosted alongside the web app.
+ * Load tune index from the web app's tune_index.json.
+ * Format: { "0": { id, name, type, key, settings }, "1": { ... }, ... }
+ * Keys are class indices matching the model's output classes.
  */
 export async function loadTuneData(baseUrl: string): Promise<void> {
-  const [indexRes, labelRes, tunesRes] = await Promise.all([
-    fetch(`${baseUrl}/assets/tune_index.json`),
-    fetch(`${baseUrl}/assets/label_map.json`),
-    fetch(`${baseUrl}/assets/tunes.json`),
-  ]);
+  const res = await fetch(`${baseUrl}/assets/tune_index.json`);
+  const data: Record<string, TuneEntry> = await res.json();
 
-  const labelMap: Record<string, number> = await labelRes.json();
-  const tunesData: TuneEntry[] = await tunesRes.json();
-
-  // Build tuneIndex (label_map maps className -> classIdx)
-  // label_map format: { "tuneName (type)": classIndex }
+  // Build tuneIndex array indexed by class index
   const indexEntries: TuneIndex[] = [];
-  for (const [key, idx] of Object.entries(labelMap)) {
-    const match = key.match(/^(.+)\s+\((\w+)\)$/);
-    const tune = tunesData.find(t => {
-      if (match) return t.name === match[1] && t.type === match[2];
-      return t.name === key;
-    });
+  for (const [key, entry] of Object.entries(data)) {
+    const idx = parseInt(key, 10);
     indexEntries[idx] = {
-      id: tune?.id ?? 0,
-      name: match ? match[1] : key,
-      type: match ? match[2] : '',
+      id: entry.id,
+      name: entry.name,
+      type: entry.type,
     };
   }
   tuneIndex = indexEntries;
 
   // Build tuneById lookup
   tuneById = new Map();
-  for (const t of tunesData) {
-    tuneById.set(t.id, t);
+  for (const entry of Object.values(data)) {
+    tuneById.set(entry.id, entry);
   }
-  tuneEntries = tunesData;
+  tuneEntries = Object.values(data);
 }
 
 export function getTuneIndex(): TuneIndex[] {
