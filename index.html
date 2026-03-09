@@ -455,6 +455,42 @@ canvas { display: block; border-radius: 6px; }
 
 .hidden { display: none !important; }
 
+/* ---- Advanced mode toggle ---- */
+header { position: relative; }
+.advanced-toggle {
+    position: absolute; right: 0; top: 2px;
+    background: none; border: 1px solid #2a3528; border-radius: 6px;
+    color: #4a6340; font-size: 11px; font-weight: 500;
+    padding: 3px 10px; cursor: pointer;
+    transition: all 0.2s;
+}
+.advanced-toggle:hover { border-color: #4c8c30; color: #7a9470; }
+body.advanced .advanced-toggle {
+    background: rgba(76, 140, 48, 0.15);
+    border-color: #4c8c30; color: #a8cc8c;
+}
+
+/* Simple mode: hide advanced elements */
+body:not(.advanced) .chroma-wrap,
+body:not(.advanced) .level-meter,
+body:not(.advanced) .viz-header h3,
+body:not(.advanced) #audioDevice,
+body:not(.advanced) #timer,
+body:not(.advanced) .hero-conf,
+body:not(.advanced) .pred-pct,
+body:not(.advanced) .history-conf,
+body:not(.advanced) #sheetCtxConf,
+body:not(.advanced) .sheet-ring {
+    display: none !important;
+}
+body:not(.advanced) .viz-card {
+    background: transparent; border: none;
+    padding: 4px 0; margin-bottom: 4px;
+}
+body:not(.advanced) .viz-header {
+    justify-content: flex-end;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 900px) {
     .layout { flex-direction: column; }
@@ -555,6 +591,7 @@ canvas { display: block; border-radius: 6px; }
     <header>
         <h1>Sionnach</h1>
         <p id="tagline" style="opacity:0">Irish Tune Identifier</p>
+        <button class="advanced-toggle" id="advancedToggle" title="Toggle detailed view">Details</button>
     </header>
 
     <div id="loading">

@@ -2,6 +2,11 @@
 // DSP runs in a Web Worker; ONNX inference runs in a separate worker.
 // The main thread only handles audio capture and UI updates.
 
+// Restore advanced mode preference early to avoid flash
+if (localStorage.getItem('sionnach-advanced') === 'true') {
+    document.body.classList.add('advanced');
+}
+
 const SAMPLE_RATE = 22050;
 const N_CHROMA = 12;
 const WINDOW_FRAMES = 344;
@@ -1415,6 +1420,12 @@ async function init() {
 
     startRecording();
     initHeroObserver();
+
+    // Advanced mode toggle
+    $('advancedToggle').addEventListener('click', () => {
+        document.body.classList.toggle('advanced');
+        localStorage.setItem('sionnach-advanced', document.body.classList.contains('advanced'));
+    });
 
     // Track user interaction for autoscroll gating
     const markActive = () => { lastInteractionTime = Date.now(); };
