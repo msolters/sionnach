@@ -1657,7 +1657,7 @@ async function init() {
     const fbCopy = new Float32Array(chromaFB);
     dspWorker.postMessage({ type: 'init', data: { chromaFB: fbCopy } }, [fbCopy.buffer]);
 
-    status.textContent = 'Loading ML model (20 MB)...';
+    status.textContent = 'Loading ML model (~80 MB)...';
     progress.value = 2;
     try {
         inferenceWorker = new Worker('inference-worker.js');
