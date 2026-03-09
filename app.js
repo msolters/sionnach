@@ -63,6 +63,9 @@ let lockedTuneId = null;
 let lockedTuneConf = 0;
 let lockCount = 0;
 const LOCK_THRESHOLD = 2;  // consecutive same-tune updates to trigger fetch
+const OVERRIDE_THRESHOLD = 6; // consecutive cycles to break a sheet lock (~6s)
+let overrideCount = 0;
+let overrideTuneId = null;
 let sheetSettings = [];
 let sheetSettingIdx = 0;
 let sheetFetchId = null;  // tune ID currently being fetched/displayed
@@ -79,6 +82,8 @@ let heroObserver = null;  // unused, kept for compat
 let windowRegions = [];   // per-window predictions for chromagram overlay
 let lastNFrames = 0;      // nFrames from last analysis (for overlay scaling)
 let lastChroma = null;    // latest chromagram for setting matching
+let liveAnalyser = null;  // AnalyserNode for waveform ring viz
+let liveWaveBuf = null;   // Float32Array for time-domain data
 let lastRawEnergy = null; // latest raw energy for noise detection in overlays
 let lastChromaNFrames = 0;
 let sheetLocked = false;        // user pinned the sheet music
@@ -96,7 +101,9 @@ let predsDebounceTimer = null;    // debounce timer for predictions list
 const $ = id => document.getElementById(id);
 
 function clearHeroTune(label) {
-    $('topTuneName').textContent = label || '';
+    // Status labels (Silence, Noise, Listening...) are shown by the ring label,
+    // so only put actual tune names in the tune name slot.
+    $('topTuneName').textContent = '';
     $('topTuneType').textContent = '';
     $('topTuneConf').textContent = '';
     $('topTuneLink').classList.add('hidden');
@@ -184,16 +191,19 @@ async function startRecording() {
         processorOptions: { targetRate: SAMPLE_RATE, nativeRate: nativeSR }
     });
 
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
-    source.connect(analyser);
-    const levelBuf = new Float32Array(analyser.fftSize);
+    liveAnalyser = audioContext.createAnalyser();
+    liveAnalyser.fftSize = 256;
+    source.connect(liveAnalyser);
+    liveWaveBuf = new Float32Array(liveAnalyser.fftSize);
+    const analyser = liveAnalyser;
+    const levelBuf = liveWaveBuf;
     function updateLevel() {
         if (!isRecording) return;
         analyser.getFloatTimeDomainData(levelBuf);
         let sum = 0;
         for (let i = 0; i < levelBuf.length; i++) sum += levelBuf[i] * levelBuf[i];
         inputLevel = Math.sqrt(sum / levelBuf.length);
+        drawRingWaveform(levelBuf);
         requestAnimationFrame(updateLevel);
     }
 
@@ -234,6 +244,9 @@ async function stopRecording() {
     clearInterval(timerHandle);
     clearInterval(updateHandle);
     clearInterval(chromaHandle);
+    clearRingWaveform();
+    liveAnalyser = null;
+    liveWaveBuf = null;
 
     // Invalidate any in-flight inference results
     inferenceRequestId++;
@@ -276,6 +289,48 @@ function updateTimerAndLevel() {
     $('levelFill').style.background = norm > 0.8 ? '#c45c3e' : norm > 0.1 ? '#4c8c30' : '#4a6340';
 
     updateListenRing();
+}
+
+// ---- Ring waveform visualization ----
+// Draws audio waveform oscillating around the ring circumference.
+// Each sample maps to an angle; amplitude displaces radially inward/outward.
+
+function drawRingWaveform(buf) {
+    const wf = $('ringWaveform');
+    if (!wf) return;
+
+    const cx = 40, cy = 40, r = 34;
+    const n = buf.length;
+    // Downsample to ~64 points for a smooth path
+    const step = Math.max(1, Math.floor(n / 64));
+    const points = [];
+    const maxAmp = 18; // max radial displacement in SVG units (must exceed stroke-width/2)
+
+    for (let i = 0; i < n; i += step) {
+        const angle = (i / n) * Math.PI * 2;
+        // Clamp and scale amplitude
+        const amp = Math.max(-1, Math.min(1, buf[i])) * maxAmp;
+        const pr = r + amp;
+        // SVG is rotated -90deg, so 0 angle = top; compute in unrotated space
+        const x = cx + pr * Math.cos(angle);
+        const y = cy + pr * Math.sin(angle);
+        points.push(x, y);
+    }
+
+    if (points.length < 4) { wf.setAttribute('d', ''); return; }
+
+    let d = `M${points[0].toFixed(1)},${points[1].toFixed(1)}`;
+    for (let i = 2; i < points.length; i += 2) {
+        d += `L${points[i].toFixed(1)},${points[i + 1].toFixed(1)}`;
+    }
+    d += 'Z'; // close the loop
+    wf.setAttribute('d', d);
+}
+
+// Clear waveform when not recording
+function clearRingWaveform() {
+    const wf = $('ringWaveform');
+    if (wf) wf.setAttribute('d', '');
 }
 
 // ---- Listening progress ring ----
@@ -774,48 +829,100 @@ function formatKey(keyStr) {
     return m[1] + ' ' + (modeNames[m[2].toLowerCase()] || m[2]);
 }
 
+// Stable pill slots: once a tune occupies a slot, it stays until replaced
+let pillSlots = [null, null, null]; // tune IDs currently in each slot
+
 function updateQuickMatches(predictions) {
     const container = $('quickMatches');
     if (!container) return;
     const top3 = predictions.slice(0, 3);
-    const sorted = [...top3].sort((a, b) => a.name.localeCompare(b.name));
+    const top3Ids = new Set(top3.map(p => p.id));
+    const top3ById = {};
+    for (const p of top3) top3ById[p.id] = p;
     const maxProb = predictions[0]?.prob || 0;
     const topId = predictions[0]?.id;
 
-    for (let i = 0; i < sorted.length; i++) {
-        const p = sorted[i];
+    // 1. Vacate slots whose tunes are no longer in top 3
+    for (let i = 0; i < 3; i++) {
+        if (pillSlots[i] !== null && !top3Ids.has(pillSlots[i])) {
+            pillSlots[i] = null;
+        }
+    }
+
+    // 2. Find new tunes that need a slot (not already placed)
+    const placed = new Set(pillSlots.filter(id => id !== null));
+    const newTunes = top3.filter(p => !placed.has(p.id))
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+    // 3. Assign new tunes to empty slots (leftmost first)
+    let ni = 0;
+    for (let i = 0; i < 3 && ni < newTunes.length; i++) {
+        if (pillSlots[i] === null) {
+            pillSlots[i] = newTunes[ni++].id;
+        }
+    }
+
+    // 4. Render pills based on stable slots
+    const activeCount = pillSlots.filter(id => id !== null).length;
+    for (let i = 0; i < 3; i++) {
+        const tuneId = pillSlots[i];
+        if (tuneId === null) continue;
+        const p = top3ById[tuneId];
+        if (!p) continue;
+
         let pill = container.children[i];
         if (!pill) {
-            pill = document.createElement('button');
-            pill.className = 'quick-pill';
-            pill.innerHTML = '<div class="quick-pill-fill"></div><span class="quick-pill-name"></span>';
-            pill.addEventListener('click', () => {
-                const tuneId = parseInt(pill.dataset.tuneId, 10);
-                if (!tuneId) return;
-                lockedTuneId = null;
-                loadSheetForTune(tuneId);
-                $('topTuneName').textContent = pill.dataset.tuneName;
-                renderHistory();
-            });
-            container.appendChild(pill);
+            // Fill gaps with placeholder pills if needed
+            while (container.children.length <= i) {
+                const ph = document.createElement('button');
+                ph.className = 'quick-pill';
+                ph.innerHTML = '<div class="quick-pill-fill"></div><span class="quick-pill-key"></span><span class="quick-pill-name"></span>';
+                ph.addEventListener('click', () => {
+                    const tid = parseInt(ph.dataset.tuneId, 10);
+                    if (!tid) return;
+                    userSelectTune(tid, ph.dataset.tuneName);
+                });
+                container.appendChild(ph);
+            }
+            pill = container.children[i];
         }
         pill.dataset.tuneId = p.id;
         pill.dataset.tuneName = p.name;
+        pill.style.display = '';
+        pill.querySelector('.quick-pill-key').textContent = (i + 1);
         const nameEl = pill.querySelector('.quick-pill-name');
         if (nameEl.textContent !== p.name) nameEl.textContent = p.name;
         const isTop = p.id === topId;
-        // Top pill fill is driven by the listen ring in updateListenRing()
         if (!isTop) {
             const fillW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
             pill.querySelector('.quick-pill-fill').style.width = fillW + '%';
         }
         pill.classList.toggle('pill-top', isTop);
+        pill.classList.toggle('pill-locked', p.id === lockedTuneId);
+        pill.classList.toggle('pill-sheet', p.id === sheetFetchId);
         if (!isTop) {
             pill.classList.remove('pill-draining', 'pill-ready');
         }
     }
-    // Remove extra pills
-    while (container.children.length > sorted.length) {
+
+    // Ensure we have exactly 3 pill DOM elements, hide unused ones
+    while (container.children.length < 3) {
+        const ph = document.createElement('button');
+        ph.className = 'quick-pill';
+        ph.innerHTML = '<div class="quick-pill-fill"></div><span class="quick-pill-key"></span><span class="quick-pill-name"></span>';
+        ph.addEventListener('click', () => {
+            const tid = parseInt(ph.dataset.tuneId, 10);
+            if (!tid) return;
+            userSelectTune(tid, ph.dataset.tuneName);
+        });
+        container.appendChild(ph);
+    }
+    for (let i = 0; i < 3; i++) {
+        if (pillSlots[i] === null) {
+            container.children[i].style.display = 'none';
+        }
+    }
+    while (container.children.length > 3) {
         container.removeChild(container.lastChild);
     }
 }
@@ -942,11 +1049,33 @@ function updateLockOn(top) {
     if (!top || !top.id) return;
     if (!musicActive) return; // don't update lock-on during silence
 
-    // If sheet is user-locked, still track history but don't change sheet music
+    // If sheet is locked, track whether a different tune is persistently dominant
     if (sheetLocked) {
-        updateHistory(top);
-        updateSheetContext(top);
-        return;
+        if (top.id !== lockedTuneId && currentConfidence > 0.5) {
+            if (top.id === overrideTuneId) {
+                overrideCount++;
+            } else {
+                overrideTuneId = top.id;
+                overrideCount = 1;
+            }
+            if (overrideCount >= OVERRIDE_THRESHOLD) {
+                // New tune is confidently dominant — break the lock
+                unlockSheet();
+                overrideCount = 0;
+                overrideTuneId = null;
+                // Fall through to normal lock-on below
+            } else {
+                updateHistory(top);
+                updateSheetContext(top);
+                return;
+            }
+        } else {
+            overrideCount = 0;
+            overrideTuneId = null;
+            updateHistory(top);
+            updateSheetContext(top);
+            return;
+        }
     }
 
     if (top.id === lockedTuneId) {
@@ -972,7 +1101,28 @@ function updateLockOn(top) {
         updateHistory(top);
         lockedTuneConf = top.prob;
         loadSheetForTune(top.id);
+        // Auto-lock sheet when system locks on
+        if (!sheetLocked) {
+            lockTimeRemaining = 0;
+            addLockTime();
+        }
     }
+}
+
+// User explicitly selected a tune — lock sheet and boost confidence
+function userSelectTune(tuneId, tuneName) {
+    lockedTuneId = null; // allow re-fetch even if same tune
+    loadSheetForTune(tuneId);
+    if (tuneName) $('topTuneName').textContent = tuneName;
+    renderHistory();
+
+    // Boost confidence to reflect user intent — decays naturally via audio analysis
+    currentConfidence = 1;
+    listenRingDisplay = 1;
+
+    // Lock the sheet music (reset, don't accumulate)
+    lockTimeRemaining = 0;
+    addLockTime();
 }
 
 function loadSheetForTune(tuneId) {
@@ -1189,11 +1339,11 @@ function updateLockUI() {
         const mins = Math.floor(lockTimeRemaining / 60);
         const secs = lockTimeRemaining % 60;
         const timeStr = mins > 0 ? `${mins}:${secs.toString().padStart(2, '0')}` : `${secs}s`;
-        icon.textContent = `\u{1F512} ${timeStr} — tap to unlock`;
+        icon.innerHTML = `\u{23F2} ${timeStr} <kbd class="lock-kbd">SPACE</kbd> extend · <span class="lock-dismiss">ESC</span> dismiss`;
         icon.className = 'sheet-lock-icon locked';
         render.classList.add('locked');
     } else if (sheetLocked) {
-        icon.textContent = '\u{1F512} tap to unlock';
+        icon.innerHTML = `\u{23F2} <kbd class="lock-kbd">SPACE</kbd> extend · <span class="lock-dismiss">ESC</span> dismiss`;
         icon.className = 'sheet-lock-icon locked';
         render.classList.add('locked');
     } else {
@@ -1497,8 +1647,20 @@ async function init() {
     $('prevSettingB').addEventListener('click', prevSettingClick);
     $('nextSettingB').addEventListener('click', nextSettingClick);
     document.addEventListener('keydown', (e) => {
+        // Ignore when typing in an input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         if (e.key === 'ArrowLeft') prevSettingClick();
         else if (e.key === 'ArrowRight') nextSettingClick();
+        else if (e.key === 'Escape' && sheetLocked) unlockSheet();
+        else if (e.key === ' ') {
+            e.preventDefault();
+            if (lockedTuneId) addLockTime();
+        }
+        else if (e.key >= '1' && e.key <= '3') {
+            const pills = $('quickMatches')?.querySelectorAll('.quick-pill');
+            const pill = pills?.[parseInt(e.key, 10) - 1];
+            if (pill) pill.click();
+        }
     });
 
     // Mic toggle
@@ -1530,10 +1692,7 @@ async function init() {
         if (!row) return;
         const tuneId = parseInt(row.dataset.tuneId, 10);
         if (!tuneId) return;
-        lockedTuneId = null;
-        loadSheetForTune(tuneId);
-        $('topTuneName').textContent = row.dataset.tuneName;
-        renderHistory();
+        userSelectTune(tuneId, row.dataset.tuneName);
     });
 
     // Rotating taglines — only start after 3 unique tunes identified
@@ -1604,8 +1763,7 @@ async function init() {
         const row = e.target.closest('.search-result-row');
         if (!row || !row.dataset.tuneId) return;
         const tuneId = parseInt(row.dataset.tuneId, 10);
-        lockedTuneId = null;
-        loadSheetForTune(tuneId);
+        userSelectTune(tuneId, row.querySelector('.search-result-name')?.textContent);
         searchInput.value = '';
         searchClear.classList.add('hidden');
         searchResults.classList.add('hidden');
@@ -1630,13 +1788,7 @@ async function init() {
         if (!entry) return;
         const tuneId = parseInt(entry.dataset.tuneId, 10);
         if (!tuneId) return;
-        // Force-fetch this tune's sheet music
-        lockedTuneId = null; // allow re-fetch even if same tune
-        loadSheetForTune(tuneId);
-        // Update hero card to show this tune
-        const name = entry.dataset.tuneName;
-        $('topTuneName').textContent = name;
-        renderHistory(); // refresh to highlight active sheet
+        userSelectTune(tuneId, entry.dataset.tuneName);
     });
 }
 
