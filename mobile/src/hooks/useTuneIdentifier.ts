@@ -5,7 +5,7 @@ import { getTuneIndex } from '../data/tune-index';
 import {
   CONSENSUS_WINDOW, CONFIDENCE_FLOOR,
   NOISE_CYCLES, SILENCE_CYCLES,
-  MIN_DISPLAY_CONFIDENCE,
+  MIN_DISPLAY_CONFIDENCE, N_CHROMA,
 } from '../constants';
 import type { Prediction, TuneIndex } from '../types';
 
@@ -38,6 +38,15 @@ const MIN_HISTORY_CYCLES = 3;
 
 /** Minimum frequency of the leading tune to not be considered noise */
 const NOISE_FREQUENCY = 0.25;
+
+/**
+ * Spectral flatness threshold for noise gating.
+ * Computed on RAW (pre-normalized) chroma energy where noise is genuinely flat.
+ * 1.0 = perfectly flat (noise), 0.0 = one dominant pitch (melodic).
+ * Ported from web app's chromaFlatness / FLATNESS_THRESH.
+ */
+const FLATNESS_THRESH = 0.45;
+const FLATNESS_NOISE_RATIO = 0.7; // skip inference if >70% of frames are flat
 
 /** Entry in the per-cycle history ring buffer */
 interface CycleEntry {
@@ -107,6 +116,35 @@ function findLeadingTune(history: CycleEntry[]): {
     frequency: bestCycleCount / totalCycles,
     avgScore: bestTotalScore / appearances.cycles.size,
   };
+}
+
+/**
+ * Spectral flatness of a single frame of raw chroma energy.
+ * Geometric mean / arithmetic mean. High = flat = noise.
+ */
+function chromaFlatness(
+  rawEnergy: Float32Array, nFrames: number, frame: number,
+): number {
+  let logSum = 0, sum = 0;
+  for (let c = 0; c < N_CHROMA; c++) {
+    const v = Math.max(rawEnergy[c * nFrames + frame], 1e-10);
+    logSum += Math.log(v);
+    sum += v;
+  }
+  const geoMean = Math.exp(logSum / N_CHROMA);
+  const ariMean = sum / N_CHROMA;
+  return ariMean > 1e-10 ? geoMean / ariMean : 1.0;
+}
+
+/** Check if the chromagram is mostly noise (flat spectral energy). */
+function isChromaticallyFlat(
+  rawEnergy: Float32Array, nFrames: number,
+): boolean {
+  let noisyFrames = 0;
+  for (let f = 0; f < nFrames; f++) {
+    if (chromaFlatness(rawEnergy, nFrames, f) > FLATNESS_THRESH) noisyFrames++;
+  }
+  return noisyFrames / nFrames > FLATNESS_NOISE_RATIO;
 }
 
 export function useTuneIdentifier() {
@@ -205,6 +243,33 @@ export function useTuneIdentifier() {
     const hasStd = dsp.tensorsStd.length > 0;
     const hasFg = dsp.tensorsFg.length > 0;
     if (!hasStd && !hasFg) return;
+
+    // Flatness gate: skip inference if the chromagram is mostly noise.
+    // Prevents garbage-collector classes (e.g. Queen of Sheba) from appearing
+    // on microphone warmup, ambient noise, or non-musical audio.
+    // Only check on standard cycles (foreground cycles don't produce rawEnergy).
+    let hasRawEnergy = false;
+    for (let i = 0; i < dsp.rawEnergy.length; i++) {
+      if (dsp.rawEnergy[i] > 0) { hasRawEnergy = true; break; }
+    }
+    if (hasRawEnergy && isChromaticallyFlat(dsp.rawEnergy, dsp.nFrames)) {
+      noiseCount.current++;
+      if (noiseCount.current >= NOISE_CYCLES) {
+        recentProbs.current = [];
+        cycleHistory.current = [];
+        cycleCounter.current = 0;
+        smoothedFit.current = 0;
+        prevLockedId.current = null;
+        setState({
+          confidence: 0,
+          status: 'noise',
+          predictions: [],
+          lockedTuneId: null,
+          tempo: lastTempo.current,
+        });
+      }
+      return;
+    }
 
     // Run inference
     const { avg, nClasses } = await runEnsembleInference(dsp.tensorsStd, dsp.tensorsFg);

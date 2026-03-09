@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState, useRef } from 'react';
 import {
-  View, Text, TextInput, Pressable, FlatList, StyleSheet, Keyboard,
+  View, Text, TextInput, Pressable, ScrollView, StyleSheet, Keyboard,
 } from 'react-native';
 import { getAllTunes } from '../data/tune-index';
 import { formatKey } from '../utils/format-key';
@@ -76,13 +76,14 @@ export function TuneSearch({ onSelect }: Props) {
 
       {showResults && (
         <View style={styles.results}>
-          <FlatList
-            data={results}
-            keyExtractor={item => String(item.id)}
+          <ScrollView
             keyboardShouldPersistTaps="handled"
             style={styles.resultsList}
-            renderItem={({ item }) => (
+            nestedScrollEnabled
+          >
+            {results.map(item => (
               <Pressable
+                key={item.id}
                 style={styles.resultRow}
                 onPress={() => handleSelect(item)}
               >
@@ -96,8 +97,8 @@ export function TuneSearch({ onSelect }: Props) {
                   ) : null}
                 </View>
               </Pressable>
-            )}
-          />
+            ))}
+          </ScrollView>
         </View>
       )}
     </View>
