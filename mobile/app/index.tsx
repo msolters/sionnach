@@ -1,7 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, SafeAreaView, ActivityIndicator,
+  Platform,
 } from 'react-native';
+import { Audio } from 'expo-av';
+import LiveAudioStream from 'react-native-live-audio-stream';
 import { HeroCard, QuickMatchPills, SheetMusicView, MicButton } from '../src/components';
 import { useTuneIdentifier } from '../src/hooks/useTuneIdentifier';
 import { loadModel, releaseModel } from '../src/inference';
@@ -11,7 +14,22 @@ import { initHannWindow } from '../src/dsp/stft';
 import {
   onAudioData, getAudioBuffer, getInputLevel, clearAudioBuffer,
 } from '../src/audio/streaming-recorder';
-import { ANALYSIS_INTERVAL_MS } from '../src/constants';
+import { ANALYSIS_INTERVAL_MS, SAMPLE_RATE } from '../src/constants';
+
+/**
+ * Decode base64-encoded 16-bit PCM to Float32Array.
+ * react-native-live-audio-stream emits base64 strings of raw PCM bytes.
+ */
+function base64ToFloat32(base64: string): Float32Array {
+  const binaryStr = atob(base64);
+  const len = binaryStr.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) bytes[i] = binaryStr.charCodeAt(i);
+  const int16 = new Int16Array(bytes.buffer);
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+  return float32;
+}
 
 // Base URL for loading assets from the web app deployment
 const WEB_BASE_URL = 'https://msolters.github.io/sionnach';
@@ -66,28 +84,47 @@ export default function HomeScreen() {
   const toggleRecording = useCallback(async () => {
     if (recording) {
       // Stop
+      LiveAudioStream.stop();
       setRecording(false);
       if (analysisTimer.current) {
         clearInterval(analysisTimer.current);
         analysisTimer.current = null;
       }
-      // TODO: Stop react-native-live-audio-stream
       clearAudioBuffer();
       reset();
     } else {
-      // Start
+      // Request mic permission
+      const { status } = await Audio.requestPermissionsAsync();
+      if (status !== 'granted') {
+        console.warn('Microphone permission denied');
+        return;
+      }
+
+      // Configure audio session (iOS needs this for recording)
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+      });
+
       clearAudioBuffer();
       reset();
+
+      // Init and start streaming audio capture
+      LiveAudioStream.init({
+        sampleRate: SAMPLE_RATE,
+        channels: 1,
+        bitsPerSample: 16,
+        audioSource: Platform.OS === 'android' ? 6 : undefined, // VOICE_RECOGNITION on Android
+        wavFile: '', // not used — we stream via 'data' events, not file output
+      });
+      LiveAudioStream.on('data', (base64: string) => {
+        const pcm = base64ToFloat32(base64);
+        onAudioData(pcm);
+      });
+      LiveAudioStream.start();
+
       setRecording(true);
-
-      // TODO: Start react-native-live-audio-stream with onAudioData callback
-      // LiveAudioStream.init({ sampleRate: 22050, channels: 1, bitsPerSample: 16 });
-      // LiveAudioStream.start();
-      // LiveAudioStream.on('data', (base64: string) => {
-      //   const pcm = base64ToFloat32(base64);
-      //   onAudioData(pcm);
-      // });
-
       analysisTimer.current = setInterval(runAnalysis, ANALYSIS_INTERVAL_MS);
     }
   }, [recording, runAnalysis, reset]);

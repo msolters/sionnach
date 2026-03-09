@@ -22,7 +22,11 @@
         "backgroundColor": "#0d1a0f"
       },
       "package": "com.sionnach.app",
-      "permissions": ["RECORD_AUDIO"]
+      "permissions": [
+        "RECORD_AUDIO",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
+      ]
     },
     "plugins": [
       "expo-router",
@@ -32,6 +36,15 @@
           "microphonePermission": "Sionnach needs microphone access to identify Irish tunes being played nearby."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "a833463d-be46-4f8e-be5e-bef5af9ac889"
+      }
+    },
+    "owner": "msolters"
   }
 }
