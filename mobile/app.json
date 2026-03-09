@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Sionnach",
+    "slug": "sionnach",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "scheme": "sionnach",
+    "splash": {
+      "backgroundColor": "#0d1a0f"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.sionnach.app",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Sionnach needs microphone access to identify Irish tunes being played nearby."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0d1a0f"
+      },
+      "package": "com.sionnach.app",
+      "permissions": ["RECORD_AUDIO"]
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Sionnach needs microphone access to identify Irish tunes being played nearby."
+        }
+      ]
+    ]
+  }
+}
