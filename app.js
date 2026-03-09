@@ -68,6 +68,7 @@ let overrideCount = 0;
 let overrideTuneId = null;
 let sheetSettings = [];
 let sheetSettingIdx = 0;
+let lockedTuneEntry = null;  // key-specific tune entry for locked tune
 let sheetFetchId = null;  // tune ID currently being fetched/displayed
 let musicActive = false;   // true when signal is above noise floor
 let silenceCount = 0;      // consecutive quiet analysis cycles
@@ -622,6 +623,7 @@ function handleInferenceResult({ probsStd, probsFg, requestId }) {
             rank: rank + 1,
             prob: entry.prob,
             id: tuneIndex[entry.bestIdx]?.id,
+            classIdx: entry.bestIdx,  // key-specific class for settings/metadata
             name: tuneIndex[entry.bestIdx]?.name || `Unknown`,
             type: tuneIndex[entry.bestIdx]?.type || '',
         }));
@@ -973,8 +975,8 @@ function renderResults(predictions) {
         $('topTuneLink').classList.add('hidden');
     }
 
-    // Metrics
-    const tuneEntry = tuneById[top.id];
+    // Metrics — use key-specific class entry for accurate key display
+    const tuneEntry = (top.classIdx != null && tuneIndex[top.classIdx]) ? tuneIndex[top.classIdx] : tuneById[top.id];
     $('metricKey').textContent = tuneEntry ? formatKey(tuneEntry.key) : '--';
     if (topType) {
         $('metricTimeSig').textContent = topType.timeSig;
@@ -1059,7 +1061,7 @@ function flushPredictionsList({ predictions, top }) {
         const nameEl = row.querySelector('.pred-name');
         if (nameEl.textContent !== p.name) nameEl.textContent = p.name;
         const metaEl = row.querySelector('.pred-meta');
-        const tuneEntry = tuneById[p.id];
+        const tuneEntry = (p.classIdx != null && tuneIndex[p.classIdx]) ? tuneIndex[p.classIdx] : tuneById[p.id];
         const metaParts = [];
         if (typeLabel) metaParts.push(typeLabel);
         if (tuneEntry && tuneEntry.key) metaParts.push(formatKey(tuneEntry.key));
@@ -1129,7 +1131,7 @@ function updateLockOn(top) {
     if (lockCount >= LOCK_THRESHOLD) {
         updateHistory(top);
         lockedTuneConf = top.prob;
-        loadSheetForTune(top.id);
+        loadSheetForTune(top.id, top.classIdx);
         // Auto-lock sheet when system locks on
         if (!sheetLocked) {
             lockTimeRemaining = 0;
@@ -1154,15 +1156,17 @@ function userSelectTune(tuneId, tuneName) {
     addLockTime();
 }
 
-function loadSheetForTune(tuneId) {
+function loadSheetForTune(tuneId, classIdx) {
     if (lockedTuneId === tuneId) return;
     lockedTuneId = tuneId;
     autoScrollTimer = null; // allow auto-scroll for this new tune
 
-    // Look up settings from our local tune index (dominant key only)
-    const entry = tuneById[tuneId];
+    // Use key-specific class entry if available (from inference),
+    // otherwise fall back to tuneById lookup (from user selection)
+    const entry = (classIdx != null && tuneIndex[classIdx]) ? tuneIndex[classIdx] : tuneById[tuneId];
     if (!entry || !entry.settings || entry.settings.length === 0) return;
 
+    lockedTuneEntry = entry;
     sheetSettings = entry.settings;
     sheetSettingIdx = bestSettingIndex(entry.settings, entry.key || '');
     renderSheet();
@@ -1282,7 +1286,7 @@ function renderSheet() {
     const setting = sheetSettings[sheetSettingIdx];
 
     // Build ABC with proper headers from tune metadata
-    const entry = tuneById[lockedTuneId];
+    const entry = lockedTuneEntry || tuneById[lockedTuneId];
     const tuneType = entry?.type || '';
     const keyStr = entry?.key || '';
     const typeInfo = TYPE_INFO[tuneType];
@@ -1418,7 +1422,7 @@ function scheduleAutoScroll() {
 function updateSheetContext(currentTop) {
     const el = $('sheetContext');
     if (!lockedTuneId) { el.classList.remove('visible'); return; }
-    const entry = tuneById[lockedTuneId];
+    const entry = lockedTuneEntry || tuneById[lockedTuneId];
     if (!entry) return;
     const typeInfo = TYPE_INFO[entry.type];
     const metaParts = [];
@@ -1602,8 +1606,19 @@ async function init() {
     try {
         const r = await fetch('assets/tune_index.json');
         tuneIndex = await r.json();
-        // Build ID lookup
-        for (const entry of Object.values(tuneIndex)) tuneById[entry.id] = entry;
+        // Build ID lookup — merge settings across key-split classes
+        for (const entry of Object.values(tuneIndex)) {
+            const existing = tuneById[entry.id];
+            if (existing) {
+                // Merge settings from this key class into existing entry
+                const existingIds = new Set(existing.settings.map(s => s.id));
+                for (const s of entry.settings) {
+                    if (!existingIds.has(s.id)) existing.settings.push(s);
+                }
+            } else {
+                tuneById[entry.id] = { ...entry, settings: [...entry.settings] };
+            }
+        }
     } catch (e) {
         status.textContent = 'Failed to load tune index: ' + e.message;
         return;
