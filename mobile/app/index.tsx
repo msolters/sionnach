@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, SafeAreaView, ActivityIndicator,
-  Platform, StatusBar,
+  Platform, StatusBar, Pressable, Linking,
 } from 'react-native';
 import { Audio } from 'expo-av';
 import LiveAudioStream from 'react-native-live-audio-stream';
-import { HeroCard, QuickMatchPills, SheetMusicView, MicButton } from '../src/components';
+import { HeroCard, QuickMatchPills, SheetMusicView } from '../src/components';
 import { useTuneIdentifier } from '../src/hooks/useTuneIdentifier';
 import { loadModel, releaseModel } from '../src/inference';
 import { loadTuneData, getTuneById } from '../src/data/tune-index';
@@ -18,7 +18,6 @@ import { ANALYSIS_INTERVAL_MS, SAMPLE_RATE } from '../src/constants';
 
 /**
  * Decode base64-encoded 16-bit PCM to Float32Array.
- * react-native-live-audio-stream emits base64 strings of raw PCM bytes.
  */
 function base64ToFloat32(base64: string): Float32Array {
   const binaryStr = atob(base64);
@@ -31,9 +30,7 @@ function base64ToFloat32(base64: string): Float32Array {
   return float32;
 }
 
-// Base URL for loading assets from the web app deployment
 const WEB_BASE_URL = 'https://msolters.github.io/sionnach';
-
 const STATUSBAR_HEIGHT = StatusBar.currentHeight ?? 0;
 
 type AppPhase = 'loading' | 'ready' | 'error';
@@ -42,13 +39,11 @@ export default function HomeScreen() {
   const [phase, setPhase] = useState<AppPhase>('loading');
   const [loadStatus, setLoadStatus] = useState('Initializing...');
   const [recording, setRecording] = useState(false);
-  const [inputLevel, setInputLevel] = useState(0);
   const [sheetAbc, setSheetAbc] = useState('');
   const [sheetTuneId, setSheetTuneId] = useState<number | null>(null);
 
   const { state, processSamples, reset } = useTuneIdentifier();
   const analysisTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const levelTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load all resources on mount
   useEffect(() => {
@@ -75,73 +70,56 @@ export default function HomeScreen() {
     return () => { releaseModel(); };
   }, []);
 
-  // Analysis loop: process accumulated audio at regular intervals
+  // Analysis loop
   const runAnalysis = useCallback(async () => {
     const buffer = getAudioBuffer();
     const level = getInputLevel();
-    if (buffer.length < 22050 * 2) return; // need at least 2s
-
+    if (buffer.length < 22050 * 2) return;
     await processSamples(buffer, level);
   }, [processSamples]);
 
   // Start/stop recording
   const toggleRecording = useCallback(async () => {
-    if (recording) {
-      // Stop — remove listener before stopping to prevent stale callbacks
-      LiveAudioStream.stop();
-      (LiveAudioStream as any).removeAllListeners?.('data');
-      setRecording(false);
-      if (analysisTimer.current) {
-        clearInterval(analysisTimer.current);
-        analysisTimer.current = null;
+    try {
+      if (recording) {
+        LiveAudioStream.stop();
+        setRecording(false);
+        if (analysisTimer.current) {
+          clearInterval(analysisTimer.current);
+          analysisTimer.current = null;
+        }
+        clearAudioBuffer();
+        reset();
+      } else {
+        const { status } = await Audio.requestPermissionsAsync();
+        console.log('Mic permission:', status);
+        if (status !== 'granted') {
+          console.warn('Microphone permission denied');
+          return;
+        }
+
+        clearAudioBuffer();
+        reset();
+
+        LiveAudioStream.init({
+          sampleRate: SAMPLE_RATE,
+          channels: 1,
+          bitsPerSample: 16,
+          audioSource: Platform.OS === 'android' ? 6 : undefined,
+          wavFile: '',
+        });
+        LiveAudioStream.on('data', (base64: string) => {
+          const pcm = base64ToFloat32(base64);
+          onAudioData(pcm);
+        });
+        LiveAudioStream.start();
+        console.log('Audio stream started');
+
+        setRecording(true);
+        analysisTimer.current = setInterval(runAnalysis, ANALYSIS_INTERVAL_MS);
       }
-      if (levelTimer.current) {
-        clearInterval(levelTimer.current);
-        levelTimer.current = null;
-      }
-      setInputLevel(0);
-      clearAudioBuffer();
-      reset();
-    } else {
-      // Request mic permission
-      const { status } = await Audio.requestPermissionsAsync();
-      if (status !== 'granted') {
-        console.warn('Microphone permission denied');
-        return;
-      }
-
-      // Configure audio session (iOS needs this for recording)
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: true,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-      });
-
-      clearAudioBuffer();
-      reset();
-
-      // Init and start streaming audio capture
-      LiveAudioStream.init({
-        sampleRate: SAMPLE_RATE,
-        channels: 1,
-        bitsPerSample: 16,
-        audioSource: Platform.OS === 'android' ? 6 : undefined, // VOICE_RECOGNITION on Android
-        wavFile: '', // not used — we stream via 'data' events, not file output
-      });
-      LiveAudioStream.on('data', (base64: string) => {
-        const pcm = base64ToFloat32(base64);
-        onAudioData(pcm);
-      });
-      LiveAudioStream.start();
-
-      setRecording(true);
-
-      // Poll input level at ~15fps for visual feedback
-      levelTimer.current = setInterval(() => {
-        setInputLevel(getInputLevel());
-      }, 66);
-
-      analysisTimer.current = setInterval(runAnalysis, ANALYSIS_INTERVAL_MS);
+    } catch (err) {
+      console.error('toggleRecording error:', err);
     }
   }, [recording, runAnalysis, reset]);
 
@@ -164,13 +142,14 @@ export default function HomeScreen() {
     }
   }, []);
 
-  // Loading screen
+  // Loading / error screen
   if (phase !== 'ready') {
     return (
       <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor="#0d1a0f" />
         <View style={styles.splash}>
-          <Text style={styles.title}>Sionnach</Text>
-          <Text style={styles.subtitle}>Irish Tune Identifier</Text>
+          <Text style={styles.splashTitle}>Sionnach</Text>
+          <Text style={styles.splashSubtitle}>Irish Tune Identifier</Text>
           {phase === 'loading' && <ActivityIndicator color="#4c8c30" size="large" />}
           <Text style={styles.loadStatus}>{loadStatus}</Text>
         </View>
@@ -181,43 +160,36 @@ export default function HomeScreen() {
   const top = state.predictions[0] ?? null;
   const tuneEntry = top ? getTuneById(top.id) : undefined;
 
-  // Audio level bar: scale 0-1, clamped
-  const levelWidth = Math.min(1, inputLevel * 8); // amplify for visibility
-
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="light-content" backgroundColor="#0d1a0f" />
       <ScrollView style={styles.scroll} contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.title}>Sionnach</Text>
+        {/* Header */}
+        <Text style={styles.headerTitle}>Sionnach</Text>
 
+        {/* Hero card with integrated mic button */}
         <HeroCard
           top={top}
           confidence={state.confidence}
-          status={recording ? state.status || 'listening' : 'idle'}
+          status={recording ? (state.status || 'listening') : 'idle'}
           tempo={state.tempo}
           tuneKey={tuneEntry?.key}
+          recording={recording}
+          onMicPress={toggleRecording}
         />
 
-        {/* Audio level indicator */}
-        {recording && (
-          <View style={styles.levelContainer}>
-            <View style={[styles.levelBar, { width: `${levelWidth * 100}%` }]} />
-          </View>
-        )}
-
-        <View style={styles.micRow}>
-          <MicButton recording={recording} onPress={toggleRecording} />
-        </View>
-
+        {/* Quick match pills */}
         {state.predictions.length > 0 && (
           <QuickMatchPills
             predictions={state.predictions}
+            confidence={state.confidence}
             lockedTuneId={state.lockedTuneId}
             sheetTuneId={sheetTuneId}
             onSelect={handleSelectTune}
           />
         )}
 
+        {/* Sheet music */}
         {sheetAbc ? (
           <SheetMusicView abc={sheetAbc} height={250} />
         ) : null}
@@ -233,23 +205,21 @@ const styles = StyleSheet.create({
     paddingTop: Platform.OS === 'android' ? STATUSBAR_HEIGHT : 0,
   },
   scroll: { flex: 1 },
-  scrollContent: { padding: 16, gap: 12 },
+  scrollContent: { padding: 16 },
   splash: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 16,
-    paddingTop: Platform.OS === 'android' ? STATUSBAR_HEIGHT : 0,
   },
-  title: {
-    fontSize: 24,
+  splashTitle: {
+    fontSize: 22,
     fontWeight: '700',
-    color: '#c8e0b0',
+    color: '#a8cc8c',
     textAlign: 'center',
-    marginBottom: 4,
   },
-  subtitle: {
-    fontSize: 14,
+  splashSubtitle: {
+    fontSize: 13,
     color: '#7a9470',
     textAlign: 'center',
   },
@@ -259,19 +229,11 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
-  levelContainer: {
-    height: 4,
-    backgroundColor: '#1a2a1a',
-    borderRadius: 2,
-    overflow: 'hidden',
-  },
-  levelBar: {
-    height: '100%',
-    backgroundColor: '#4c8c30',
-    borderRadius: 2,
-  },
-  micRow: {
-    alignItems: 'center',
-    marginVertical: 4,
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#a8cc8c',
+    textAlign: 'center',
+    marginBottom: 12,
   },
 });

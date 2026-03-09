@@ -10,87 +10,171 @@ interface Props {
   status: string;
   tempo: number | null;
   tuneKey?: string;
-  timeSig?: string;
+  recording: boolean;
+  onMicPress: () => void;
 }
 
-export function HeroCard({ top, confidence, status, tempo, tuneKey, timeSig }: Props) {
-  const ringState = confidence >= 0.99
-    ? 'ready'
-    : confidence > 0 && status === 'identifying'
-      ? 'filling'
-      : 'idle';
-
-  const label = status === 'noise' ? 'Noise'
-    : status === 'silence' ? 'Silence'
-      : status === 'identifying' ? 'Identifying...'
-        : status === 'listening' ? 'Listening...'
-          : 'Play a tune...';
+export function HeroCard({ top, confidence, status, tempo, tuneKey, recording, onMicPress }: Props) {
+  // Ring label logic — matches web app exactly
+  let label: string;
+  if (status === 'noise') label = 'Noise';
+  else if (status === 'silence') label = 'Silence';
+  else if (confidence >= 0.99) label = 'Current Tune';
+  else if (confidence >= 0.3) label = 'Identifying...';
+  else if (status === 'listening') label = 'Listening...';
+  else if (!recording) label = 'Stopped';
+  else label = 'Play a tune...';
 
   return (
     <View style={styles.card}>
-      <View style={styles.top}>
-        <ListenRing progress={confidence} state={ringState} />
+      {/* Top row: ring + info + session link */}
+      <View style={styles.topRow}>
+        <ListenRing target={confidence} size={44} />
         <View style={styles.info}>
           <Text style={styles.label}>{label}</Text>
           {top && (
             <>
-              <Text style={styles.name} numberOfLines={1}>{top.name}</Text>
+              <Text style={styles.tuneName} numberOfLines={1}>{top.name}</Text>
               <View style={styles.meta}>
-                {top.type ? <Text style={styles.type}>{top.type}</Text> : null}
-                <Text style={styles.conf}>{(top.prob * 100).toFixed(1)}%</Text>
+                {top.type ? <Text style={styles.tuneType}>{top.type}</Text> : null}
               </View>
             </>
           )}
         </View>
-      </View>
-      <View style={styles.stats}>
-        <Stat label="Key" value={tuneKey ?? '--'} />
-        <Stat label="Time" value={timeSig ?? '--'} />
-        <Stat label="BPM" value={tempo ? `${tempo}` : '--'} />
         {top?.id ? (
-          <Pressable onPress={() => Linking.openURL(`${SESSION_URL}/${top.id}`)}>
-            <Text style={styles.link}>Session</Text>
+          <Pressable
+            style={styles.sessionBtn}
+            onPress={() => Linking.openURL(`${SESSION_URL}/${top.id}`)}
+          >
+            <Text style={styles.sessionBtnText}>Session</Text>
           </Pressable>
         ) : null}
+      </View>
+
+      {/* Stats row: Key, Time, BPM, mic button */}
+      <View style={styles.statsRow}>
+        <Stat label="Key" value={tuneKey ?? '--'} />
+        <Stat label="Time" value="--" />
+        <Stat label="BPM" value={tempo ? `${tempo}` : '--'} unit={tempo ? 'BPM' : undefined} />
+        <Pressable
+          style={[styles.micBtn, recording ? styles.micBtnRec : styles.micBtnIdle]}
+          onPress={onMicPress}
+        >
+          <Text style={styles.micBtnText}>{recording ? 'Stop' : 'Start'}</Text>
+        </Pressable>
       </View>
     </View>
   );
 }
 
-function Stat({ label, value }: { label: string; value: string }) {
+function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
   return (
     <View style={styles.stat}>
       <Text style={styles.statLabel}>{label}</Text>
-      <Text style={styles.statValue}>{value}</Text>
+      <View style={styles.statValueRow}>
+        <Text style={styles.statValue}>{value}</Text>
+        {unit && <Text style={styles.statUnit}>{unit}</Text>}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'rgba(42, 53, 40, 0.4)',
+    backgroundColor: '#1a2418',
     borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     borderColor: '#2a3528',
+    marginBottom: 12,
   },
-  top: { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  info: { flex: 1 },
-  label: { fontSize: 11, color: '#7a9470', textTransform: 'uppercase', letterSpacing: 1 },
-  name: { fontSize: 18, fontWeight: '700', color: '#e8f5e0', marginTop: 2 },
-  meta: { flexDirection: 'row', gap: 8, marginTop: 4 },
-  type: { fontSize: 12, color: '#c4973a', fontWeight: '500' },
-  conf: { fontSize: 12, color: '#6aaa3d' },
-  stats: {
+  topRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginTop: 12,
+    alignItems: 'center',
+    gap: 14,
+  },
+  info: { flex: 1 },
+  label: {
+    fontSize: 10,
+    color: '#7a9470',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+  },
+  tuneName: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#c8e0b0',
+    marginTop: 2,
+  },
+  meta: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 4,
+  },
+  tuneType: {
+    fontSize: 13,
+    color: '#c4973a',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  sessionBtn: {
+    paddingVertical: 7,
+    paddingHorizontal: 16,
+    backgroundColor: '#3d7a2a',
+    borderRadius: 8,
+  },
+  sessionBtnText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#d4ddd0',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 10,
     paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: '#2a3528',
+    alignItems: 'center',
   },
-  stat: { alignItems: 'center' },
-  statLabel: { fontSize: 10, color: '#5a7a50', textTransform: 'uppercase' },
-  statValue: { fontSize: 14, fontWeight: '600', color: '#c8e0b0', marginTop: 2 },
-  link: { fontSize: 12, color: '#6ba3d6', textDecorationLine: 'underline' },
+  stat: {},
+  statLabel: {
+    fontSize: 10,
+    color: '#7a9470',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  statValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 3,
+  },
+  statValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#c8e0b0',
+    marginTop: 2,
+  },
+  statUnit: {
+    fontSize: 12,
+    color: '#7a9470',
+    fontWeight: '400',
+  },
+  micBtn: {
+    marginLeft: 'auto',
+    paddingVertical: 5,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+  },
+  micBtnIdle: {
+    backgroundColor: '#3d7a2a',
+  },
+  micBtnRec: {
+    backgroundColor: '#8c3030',
+  },
+  micBtnText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#d4ddd0',
+  },
 });
