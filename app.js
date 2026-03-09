@@ -312,6 +312,14 @@ function updateListenRing() {
         sf.classList.toggle('ready', isReady);
     }
 
+    // Mirror to top quick-match pill
+    const topPill = $('quickMatches')?.querySelector('.pill-top');
+    if (topPill) {
+        topPill.querySelector('.quick-pill-fill').style.width = (pct * 100) + '%';
+        topPill.classList.toggle('pill-draining', isDraining);
+        topPill.classList.toggle('pill-ready', isReady);
+    }
+
     if (pct >= 0.99) {
         label.textContent = 'Current Tune';
         // Auto-scroll to sheet music if user has been idle 30s+
@@ -795,9 +803,16 @@ function updateQuickMatches(predictions) {
         pill.dataset.tuneName = p.name;
         const nameEl = pill.querySelector('.quick-pill-name');
         if (nameEl.textContent !== p.name) nameEl.textContent = p.name;
-        const fillW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
-        pill.querySelector('.quick-pill-fill').style.width = fillW + '%';
-        pill.classList.toggle('pill-top', p.id === topId);
+        const isTop = p.id === topId;
+        // Top pill fill is driven by the listen ring in updateListenRing()
+        if (!isTop) {
+            const fillW = maxProb > 0 ? (p.prob / maxProb * 100) : 0;
+            pill.querySelector('.quick-pill-fill').style.width = fillW + '%';
+        }
+        pill.classList.toggle('pill-top', isTop);
+        if (!isTop) {
+            pill.classList.remove('pill-draining', 'pill-ready');
+        }
     }
     // Remove extra pills
     while (container.children.length > sorted.length) {

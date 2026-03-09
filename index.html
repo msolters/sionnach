@@ -472,13 +472,17 @@ body.advanced .quick-matches { display: none !important; }
 }
 .quick-pill:hover { border-color: #4c8c30; }
 .quick-pill.pill-top { border-color: #6aaa3d; color: #6aaa3d; }
+.quick-pill.pill-top.pill-draining { border-color: #c4973a; color: #c4973a; }
+.quick-pill.pill-top.pill-ready { border-color: #6aaa3d; color: #6aaa3d; }
 .quick-pill-fill {
     position: absolute; left: 0; top: 0; bottom: 0;
     background: rgba(106, 170, 61, 0.12);
     border-radius: 20px;
-    transition: width 0.6s ease;
+    transition: width 0.15s ease, background 0.3s ease;
     pointer-events: none;
 }
+.quick-pill.pill-draining .quick-pill-fill { background: rgba(196, 151, 58, 0.15); }
+.quick-pill.pill-ready .quick-pill-fill { background: rgba(106, 170, 61, 0.18); }
 .quick-pill-name {
     position: relative; pointer-events: none;
 }
