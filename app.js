@@ -573,15 +573,35 @@ function handleInferenceResult({ probsStd, probsFg, requestId }) {
     const windowLen = recentProbs.length;
     for (let i = 0; i < nClasses; i++) consensus[i] /= windowLen;
 
-    const indices = Array.from({ length: nClasses }, (_, i) => i);
-    indices.sort((a, b) => consensus[b] - consensus[a]);
+    // Merge scores for key-split classes sharing the same tune ID.
+    // Without this, a tune's probability is split across key variants
+    // (e.g. Foxhunter's_A=0.08 + Foxhunter's_G=0.07 = 0.15 combined).
+    const mergedByTuneId = new Map();  // tuneId -> { prob, bestClassIdx }
+    for (let i = 0; i < nClasses; i++) {
+        const entry = tuneIndex[i];
+        if (!entry) continue;
+        const tid = entry.id;
+        const existing = mergedByTuneId.get(tid);
+        if (existing) {
+            existing.prob += consensus[i];
+            // Track which class had the highest individual score (for metadata)
+            if (consensus[i] > consensus[existing.bestClassIdx]) {
+                existing.bestClassIdx = i;
+            }
+        } else {
+            mergedByTuneId.set(tid, { prob: consensus[i], bestClassIdx: i });
+        }
+    }
 
-    const topProb = consensus[indices[0]];
+    // Sort merged tunes by combined probability
+    const mergedEntries = [...mergedByTuneId.entries()];
+    mergedEntries.sort((a, b) => b[1].prob - a[1].prob);
+
+    const topProb = mergedEntries[0]?.[1].prob || 0;
 
     // Update confidence (drives the ring)
-    const topConsensusProb = consensus[indices[0]];
-    const secondProb = consensus[indices[1]] || 0;
-    const ratio = secondProb > 0 ? topConsensusProb / secondProb : (topConsensusProb > 0 ? 10 : 0);
+    const secondProb = mergedEntries[1]?.[1].prob || 0;
+    const ratio = secondProb > 0 ? topProb / secondProb : (topProb > 0 ? 10 : 0);
     currentConfidence = Math.min(Math.max((ratio - 1) / 2, 0), 1);
 
     // Noise detection: low confidence = no clear winner among tunes
@@ -609,12 +629,12 @@ function handleInferenceResult({ probsStd, probsFg, requestId }) {
     }
 
     if (!isNoise && topProb >= CONFIDENCE_FLOOR) {
-        const predictions = indices.slice(0, 10).map((idx, rank) => ({
+        const predictions = mergedEntries.slice(0, 10).map(([tid, { prob, bestClassIdx }], rank) => ({
             rank: rank + 1,
-            prob: consensus[idx],
-            id: tuneIndex[idx]?.id,
-            name: tuneIndex[idx]?.name || `Unknown #${idx}`,
-            type: tuneIndex[idx]?.type || '',
+            prob,
+            id: tid,
+            name: tuneIndex[bestClassIdx]?.name || `Unknown #${tid}`,
+            type: tuneIndex[bestClassIdx]?.type || '',
         }));
 
         renderResults(predictions);
