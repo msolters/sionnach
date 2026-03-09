@@ -224,20 +224,37 @@ async function startRecording() {
     }
 }
 
-function stopRecording() {
+async function stopRecording() {
     isRecording = false;
     clearInterval(timerHandle);
     clearInterval(updateHandle);
     clearInterval(chromaHandle);
 
-    if (workletNode) { workletNode.disconnect(); workletNode = null; }
+    // Invalidate any in-flight inference results
+    inferenceRequestId++;
+
+    // Teardown order matters on iOS WebKit:
+    // 1. Signal worklet to stop (returns false from process(), stops posting)
+    // 2. Disconnect worklet from audio graph
+    // 3. Close AudioContext (awaited — iOS races if fire-and-forget)
+    // 4. Stop media tracks last (so MediaStreamSource doesn't read a dead track)
+    if (workletNode) {
+        workletNode.port.postMessage('stop');
+        workletNode.disconnect();
+        workletNode = null;
+    }
+    if (audioContext) {
+        try { await audioContext.close(); } catch (_) {}
+        audioContext = null;
+    }
     if (mediaStream) { mediaStream.getTracks().forEach(t => t.stop()); mediaStream = null; }
-    if (audioContext) { audioContext.close(); audioContext = null; }
+
+    // Release audio buffer memory
+    audioSamples = [];
+    totalSamples = 0;
 
     clearHeroTune('Stopped');
     document.body.classList.remove('recording');
-
-    requestAnalysis();
 }
 
 // ---- Timer and level meter ----
@@ -342,7 +359,7 @@ function requestAnalysis() {
 
 function handleWorkerResult(data) {
     workerBusy = false;
-    if (!data) return;
+    if (!data || !isRecording) return;
 
     const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
 
@@ -417,8 +434,8 @@ const WEIGHT_STD = 0.35;
 const WEIGHT_FG = 0.65;
 
 function handleInferenceResult({ probsStd, probsFg, requestId }) {
-    // Discard stale results
-    if (requestId !== inferenceRequestId) return;
+    // Discard stale or post-stop results
+    if (requestId !== inferenceRequestId || !isRecording) return;
 
     const nFrames = lastNFrames;
 
@@ -1352,7 +1369,7 @@ async function init() {
         if (e.data.type === 'ready') console.log('DSP worker ready');
         if (e.data.type === 'chroma-only') {
             chromaBusy = false;
-            if (e.data.data) {
+            if (e.data.data && isRecording) {
                 const { chroma, rawEnergy, nFrames } = e.data.data;
                 lastChroma = chroma;
                 lastChromaNFrames = nFrames;

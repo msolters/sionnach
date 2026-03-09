@@ -24,6 +24,14 @@ self.onmessage = async function(e) {
         }
     }
 
+    if (type === 'release') {
+        if (session) {
+            session.release();
+            session = null;
+        }
+        self.postMessage({ type: 'released' });
+    }
+
     if (type === 'infer') {
         if (!session) return;
         const { tensorsStd, tensorsFg, requestId } = data;

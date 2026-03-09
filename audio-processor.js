@@ -9,9 +9,17 @@ class PCMProcessor extends AudioWorkletProcessor {
         this.ratio = this.nativeRate / this.targetRate;
         this.needsResample = Math.abs(this.ratio - 1) > 0.01;
         this.srcPos = 0; // fractional position in source stream
+        this.stopped = false;
+
+        // Listen for stop signal from main thread
+        this.port.onmessage = (e) => {
+            if (e.data === 'stop') this.stopped = true;
+        };
     }
 
     process(inputs) {
+        if (this.stopped) return false; // signal AudioWorklet to stop
+
         const input = inputs[0];
         if (input.length === 0) return true;
         const samples = input[0];
