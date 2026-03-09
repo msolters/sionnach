@@ -4,3 +4,5 @@ dist/
 *.tsbuildinfo
 ios/
 android/
+assets/model.onnx
+package-lock.json
