@@ -1450,11 +1450,11 @@ async function init() {
         if (isRecording) {
             stopRecording();
             btn.className = 'mic-btn idle';
-            btn.textContent = 'Start Recording';
+            btn.textContent = 'Start';
         } else {
             startRecording();
             btn.className = 'mic-btn recording';
-            btn.textContent = 'Stop Recording';
+            btn.textContent = 'Stop';
         }
     });
 

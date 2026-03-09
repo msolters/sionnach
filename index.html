@@ -105,9 +105,10 @@ button:disabled { opacity: 0.4; cursor: default; }
 }
 .hero-link:hover { opacity: 0.85; }
 .hero-stats {
-    display: flex; gap: 16px; margin-top: 10px;
+    display: flex; align-items: center; gap: 16px; margin-top: 10px;
     padding-top: 10px; border-top: 1px solid #2a3528;
 }
+.hero-stats .mic-btn { margin-left: auto; }
 .hero-stat { display: flex; align-items: baseline; gap: 5px; }
 .hero-stat-label { font-size: 10px; color: #7a9470; text-transform: uppercase; letter-spacing: 0.5px; }
 .hero-stat-value { font-size: 18px; font-weight: 700; color: #c8e0b0; }
@@ -484,11 +485,7 @@ body:not(.advanced) #sheetCtxConf {
     display: none !important;
 }
 body:not(.advanced) .viz-card {
-    background: transparent; border: none;
-    padding: 4px 0; margin-bottom: 4px;
-}
-body:not(.advanced) .viz-header {
-    justify-content: flex-end;
+    display: none !important;
 }
 
 /* ---- Responsive ---- */
@@ -616,7 +613,6 @@ body:not(.advanced) .viz-header {
                 <div class="viz-header-right">
                     <span id="audioDevice"></span>
                     <span id="timer">0:00</span>
-                    <button class="mic-btn recording" id="micToggle">Stop Recording</button>
                 </div>
             </div>
             <div class="chroma-wrap">
@@ -662,6 +658,7 @@ body:not(.advanced) .viz-header {
                             <span class="hero-stat-value" id="metricTempo">--</span>
                             <span class="hero-stat-unit">BPM</span>
                         </div>
+                        <button class="mic-btn recording" id="micToggle">Stop</button>
                     </div>
                 </div>
 
