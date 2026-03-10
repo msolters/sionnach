@@ -356,11 +356,23 @@ canvas { display: block; border-radius: 6px; }
 .history-conf { color: #6aaa3d; }
 .history-empty { color: #4a6340; font-size: 12px; text-align: center; padding: 16px 0; }
 
-/* ---- Model info ---- */
-body:not(.advanced) .model-info { display: none; }
+/* ---- Model info & memory ---- */
+body:not(.advanced) .model-info,
+body:not(.advanced) .mem-graph-wrap { display: none; }
 .model-info {
     font-size: 11px; color: #5a7a50; text-align: center; padding: 8px 0 4px;
     letter-spacing: 0.3px;
+}
+.mem-graph-wrap {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 4px 0 8px;
+}
+.mem-graph-wrap canvas {
+    border-radius: 4px; background: #0d1a0f; border: 1px solid #2a3528;
+}
+.mem-label {
+    font-size: 10px; color: #5a7a50; font-variant-numeric: tabular-nums;
+    min-width: 70px;
 }
 
 /* ---- Predictions sidebar ---- */
@@ -801,6 +813,10 @@ body:not(.advanced) .viz-card {
 
         <!-- Model info (details mode only) -->
         <div class="model-info" id="modelInfo"></div>
+        <div class="mem-graph-wrap" id="memGraphWrap">
+            <canvas id="memGraph" width="300" height="40"></canvas>
+            <span class="mem-label" id="memLabel"></span>
+        </div>
     </div>
 </div>
 

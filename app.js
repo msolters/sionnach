@@ -44,8 +44,7 @@ let audioSamples = [];
 let totalSamples = 0;
 let tuneIndex = null;
 let tuneById = {};  // tune ID -> tune entry (built after loading index)
-let inferenceWorker = null;
-let inferenceRequestId = 0;
+let tuneAbc = null; // setting_id -> abc_string (lazy-loaded)
 let dspWorker = null;
 let selectedDeviceId = '';
 let isRecording = false;
@@ -254,8 +253,8 @@ async function stopRecording() {
     liveAnalyser = null;
     liveWaveBuf = null;
 
-    // Invalidate any in-flight inference results
-    inferenceRequestId++;
+    // No need to invalidate — inference runs inside the same worker as DSP,
+    // and workerBusy gate prevents stale results.
 
     // Teardown order matters on iOS WebKit:
     // 1. Signal worklet to stop (returns false from process(), stops posting)
@@ -435,7 +434,7 @@ function handleWorkerResult(data) {
     workerBusy = false;
     if (!data || !isRecording) return;
 
-    const { chroma, rawEnergy, nFrames, tensors, tensorsFg, tempo } = data;
+    const { chroma, rawEnergy, nFrames, probsStd, probsFg, tempo } = data;
 
     // Detect silence via input level. The chromagram noise overlay (drawSilenceOverlay)
     // handles visual noise labeling independently. For music detection gating, we only
@@ -483,37 +482,21 @@ function handleWorkerResult(data) {
     drawChromagram(chroma, rawEnergy, nFrames);
     drawSilenceOverlay(rawEnergy, nFrames);
 
-    if (tensors.length === 0) return;
+    if (!probsStd || probsStd.length === 0) return;
 
-    // If silent, skip inference — keep the last results on screen
+    // If silent, skip processing inference results — keep the last results on screen
     if (!musicActive) return;
 
-    // Send tensors to inference worker (non-blocking)
-    inferenceRequestId++;
-    const transferables = [
-        ...tensors.map(t => t.buffer),
-        ...tensorsFg.map(t => t.buffer),
-    ];
-    inferenceWorker.postMessage({
-        type: 'infer',
-        data: {
-            tensorsStd: tensors,
-            tensorsFg: tensorsFg,
-            requestId: inferenceRequestId,
-        }
-    }, transferables);
+    // Process inference results directly (DSP + inference now run in same worker)
+    handleInferenceResult({ probsStd, probsFg, nFrames });
 }
 
-// ---- Inference results (from inference worker) ----
+// ---- Inference results ----
 
 const WEIGHT_STD = 0.35;
 const WEIGHT_FG = 0.65;
 
-function handleInferenceResult({ probsStd, probsFg, requestId }) {
-    // Discard stale or post-stop results
-    if (requestId !== inferenceRequestId || !isRecording) return;
-
-    const nFrames = lastNFrames;
+function handleInferenceResult({ probsStd, probsFg, nFrames }) {
 
     // Compute window frame positions (mirrors worker logic)
     const winStarts = [];
@@ -1174,7 +1157,21 @@ function userSelectTune(tuneId, tuneName) {
     addLockTime();
 }
 
-function loadSheetForTune(tuneId, classIdx) {
+async function ensureAbcLoaded() {
+    if (tuneAbc) return;
+    const r = await fetch('assets/tune_abc.json');
+    tuneAbc = await r.json();
+}
+
+function hydrateSettings(settings) {
+    if (!tuneAbc) return settings;
+    for (const s of settings) {
+        if (!s.abc) s.abc = tuneAbc[String(s.id)] || '';
+    }
+    return settings;
+}
+
+async function loadSheetForTune(tuneId, classIdx) {
     // Skip if same tune AND same key class (avoid redundant re-render)
     if (lockedTuneId === tuneId && (classIdx == null || classIdx === lockedClassIdx)) return;
     lockedTuneId = tuneId;
@@ -1186,8 +1183,11 @@ function loadSheetForTune(tuneId, classIdx) {
     const entry = (classIdx != null && tuneIndex[classIdx]) ? tuneIndex[classIdx] : tuneById[tuneId];
     if (!entry || !entry.settings || entry.settings.length === 0) return;
 
+    // Lazy-load ABC data on first sheet music display
+    await ensureAbcLoaded();
+
     lockedTuneEntry = entry;
-    sheetSettings = entry.settings;
+    sheetSettings = hydrateSettings(entry.settings);
     sheetSettingIdx = bestSettingIndex(entry.settings, entry.key || '');
     renderSheet();
     $('sheetPanel').classList.add('open');
@@ -1657,47 +1657,45 @@ async function init() {
         return;
     }
 
-    status.textContent = 'Initializing DSP worker...';
-    progress.value = 1.5;
-    dspWorker = new Worker('worker.js');
-    dspWorker.onmessage = (e) => {
-        if (e.data.type === 'ready') console.log('DSP worker ready');
-        if (e.data.type === 'chroma-only') {
-            chromaBusy = false;
-            if (e.data.data && isRecording) {
-                const { chroma, rawEnergy, nFrames } = e.data.data;
-                lastChroma = chroma;
-                lastChromaNFrames = nFrames;
-                lastNFrames = nFrames;
-                drawChromagram(chroma, rawEnergy, nFrames);
-                drawSilenceOverlay(rawEnergy, nFrames);
-                if (windowRegions.length > 0) drawWindowOverlay(nFrames);
-            }
-        }
-        if (e.data.type === 'result') handleWorkerResult(e.data.data);
-    };
-    const fbCopy = new Float32Array(chromaFB);
-    dspWorker.postMessage({ type: 'init', data: { chromaFB: fbCopy } }, [fbCopy.buffer]);
-
-    status.textContent = 'Loading ML model (~80 MB)...';
     progress.value = 2;
+    let modelSizeLabel = '';
     try {
-        inferenceWorker = new Worker('inference-worker.js');
+        const head = await fetch('assets/model.onnx', { method: 'HEAD' });
+        const bytes = parseInt(head.headers.get('content-length'), 10);
+        if (bytes > 0) modelSizeLabel = ` (~${Math.round(bytes / 1024 / 1024)} MB)`;
+    } catch (_) {}
+    status.textContent = `Loading ML model${modelSizeLabel}...`;
+    dspWorker = new Worker('worker.js');
+    dspWorker.onerror = (err) => console.error('Worker error:', err);
+    try {
         await new Promise((resolve, reject) => {
-            inferenceWorker.onmessage = (e) => {
+            dspWorker.onmessage = (e) => {
                 if (e.data.type === 'ready') {
                     // Switch to permanent message handler
-                    inferenceWorker.onmessage = (ev) => {
-                        if (ev.data.type === 'result') handleInferenceResult(ev.data.data);
+                    dspWorker.onmessage = (ev) => {
+                        if (ev.data.type === 'chroma-only') {
+                            chromaBusy = false;
+                            if (ev.data.data && isRecording) {
+                                const { chroma, rawEnergy, nFrames } = ev.data.data;
+                                lastChroma = chroma;
+                                lastChromaNFrames = nFrames;
+                                lastNFrames = nFrames;
+                                drawChromagram(chroma, rawEnergy, nFrames);
+                                drawSilenceOverlay(rawEnergy, nFrames);
+                                if (windowRegions.length > 0) drawWindowOverlay(nFrames);
+                            }
+                        }
+                        if (ev.data.type === 'result') handleWorkerResult(ev.data.data);
                     };
                     resolve();
                 }
                 if (e.data.type === 'error') reject(new Error(e.data.error));
             };
-            inferenceWorker.postMessage({
+            const fbCopy = new Float32Array(chromaFB);
+            dspWorker.postMessage({
                 type: 'init',
-                data: { modelUrl: 'assets/model.onnx' }
-            });
+                data: { chromaFB: fbCopy, modelUrl: 'assets/model.onnx' }
+            }, [fbCopy.buffer]);
         });
     } catch (e) {
         status.textContent = 'Failed to load model: ' + e.message;
@@ -1723,8 +1721,8 @@ async function init() {
         document.addEventListener(evt, markActive, { passive: true });
     }
     markActive();  // user just pressed Get Started
-    function prevSettingClick() { if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); } }
-    function nextSettingClick() { if (sheetSettingIdx < sheetSettings.length - 1) { sheetSettingIdx++; renderSheet(); } }
+    function prevSettingClick() { if (sheetSettingIdx > 0) { sheetSettingIdx--; renderSheet(); updateSheetContext(); } }
+    function nextSettingClick() { if (sheetSettingIdx < sheetSettings.length - 1) { sheetSettingIdx++; renderSheet(); updateSheetContext(); } }
     $('prevSetting').addEventListener('click', prevSettingClick);
     $('nextSetting').addEventListener('click', nextSettingClick);
     $('prevSettingB').addEventListener('click', prevSettingClick);
@@ -1877,6 +1875,67 @@ async function init() {
         if (!tuneId) return;
         userSelectTune(tuneId, entry.dataset.tuneName);
     });
+
+    // Memory usage graph (details mode)
+    initMemoryGraph();
+}
+
+function initMemoryGraph() {
+    const canvas = $('memGraph');
+    const label = $('memLabel');
+    if (!canvas || !label) return;
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const history = new Float32Array(W);
+    let head = 0;
+    let maxMB = 100;
+
+    function getMemoryMB() {
+        // Chrome/Edge: performance.memory
+        if (performance.memory) {
+            return performance.memory.usedJSHeapSize / (1024 * 1024);
+        }
+        return null;
+    }
+
+    function draw() {
+        ctx.fillStyle = '#0d1a0f';
+        ctx.fillRect(0, 0, W, H);
+
+        // Draw threshold line at maxMB
+        ctx.strokeStyle = '#2a3528';
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, 4);
+        ctx.lineTo(W, 4);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Draw memory line
+        ctx.strokeStyle = '#4c8c30';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < W; i++) {
+            const idx = (head + i) % W;
+            const y = H - (history[idx] / maxMB) * (H - 4);
+            if (i === 0) ctx.moveTo(i, y);
+            else ctx.lineTo(i, y);
+        }
+        ctx.stroke();
+    }
+
+    setInterval(() => {
+        const mb = getMemoryMB();
+        if (mb === null) {
+            label.textContent = 'N/A';
+            return;
+        }
+        history[head] = mb;
+        head = (head + 1) % W;
+        if (mb > maxMB * 0.9) maxMB = Math.ceil(mb * 1.3);
+        label.textContent = `${mb.toFixed(0)} MB`;
+        if (document.body.classList.contains('advanced')) draw();
+    }, 2000);
 }
 
 initSplash();

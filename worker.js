@@ -1,7 +1,8 @@
-// Web Worker: DSP processing (FFT, STFT, chromagram, HPSS extraction)
-// Runs off the main thread so the UI stays responsive.
-// Produces two chromagram paths: standard and harmonic-foreground,
-// mirroring the ensemble approach used during training.
+// Unified Web Worker: DSP processing + ONNX inference
+// Handles FFT, STFT, chromagram, HPSS extraction, and model inference
+// all off the main thread so the UI stays responsive.
+
+importScripts('https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/ort.min.js');
 
 const SAMPLE_RATE = 22050;
 const N_FFT = 2048;
@@ -24,6 +25,9 @@ const DRONE_WINDOW = 172;  // ~4 seconds at 43 frames/sec
 let chromaFB = null;
 let chromaFB_melody = null;  // frequency-restricted filter bank for foreground
 let hannWindow = null;
+
+// ONNX inference session
+let session = null;
 
 // ---- FFT (radix-2 Cooley-Tukey) ----
 
@@ -410,12 +414,32 @@ function estimateTempo(samples) {
     return Math.round(adjustedBpm);
 }
 
+// ---- ONNX inference ----
+
+async function inferWindows(windowTensors) {
+    const allProbs = [];
+    for (const tensorData of windowTensors) {
+        const input = new ort.Tensor('float32', tensorData, [1, 2, N_CHROMA, WINDOW_FRAMES]);
+        const output = await session.run({ input });
+        const logits = output.output.data;
+        let maxL = -Infinity;
+        for (let i = 0; i < logits.length; i++) if (logits[i] > maxL) maxL = logits[i];
+        const probs = new Float32Array(logits.length);
+        let sum = 0;
+        for (let i = 0; i < logits.length; i++) { probs[i] = Math.exp(logits[i] - maxL); sum += probs[i]; }
+        for (let i = 0; i < probs.length; i++) probs[i] /= sum;
+        allProbs.push(probs);
+    }
+    return allProbs;
+}
+
 // ---- Message handling ----
 
-self.onmessage = function(e) {
+self.onmessage = async function(e) {
     const { type, data } = e.data;
 
     if (type === 'init') {
+        // Initialize DSP
         chromaFB = new Float32Array(data.chromaFB);
         hannWindow = new Float32Array(N_FFT);
         for (let i = 0; i < N_FFT; i++)
@@ -432,7 +456,17 @@ self.onmessage = function(e) {
             }
         }
 
-        self.postMessage({ type: 'ready' });
+        // Initialize ONNX session
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+        try {
+            session = await ort.InferenceSession.create(data.modelUrl, {
+                executionProviders: ['wasm'],
+            });
+            self.postMessage({ type: 'ready' });
+        } catch (err) {
+            self.postMessage({ type: 'error', error: err.message });
+        }
     }
 
     if (type === 'chroma-only') {
@@ -451,43 +485,64 @@ self.onmessage = function(e) {
     }
 
     if (type === 'process') {
-        const samples = new Float32Array(data.samples);
+        try {
+            const samples = new Float32Array(data.samples);
 
-        // Compute STFT once, reuse for both paths
-        const stft = computeSTFT(samples);
-        if (!stft) {
-            self.postMessage({ type: 'result', data: null });
-            return;
-        }
-
-        const { mag, nFrames, nBins } = stft;
-
-        // Standard chromagram path
-        const stdResult = processStandard(mag, nFrames, nBins);
-        const tensorsStd = prepareModelInputs(stdResult.chroma, nFrames);
-
-        // Foreground (harmonic-only) chromagram path
-        const chromaFg = processForeground(mag, nFrames, nBins);
-        const tensorsFg = prepareModelInputs(chromaFg, nFrames);
-
-        const tempo = estimateTempo(samples);
-
-        const transferables = [
-            stdResult.chroma.buffer,
-            stdResult.rawEnergy.buffer,
-            ...tensorsStd.map(t => t.buffer),
-            ...tensorsFg.map(t => t.buffer),
-        ];
-        self.postMessage({
-            type: 'result',
-            data: {
-                chroma: stdResult.chroma,
-                rawEnergy: stdResult.rawEnergy,
-                nFrames: nFrames,
-                tensors: tensorsStd,
-                tensorsFg: tensorsFg,
-                tempo: tempo,
+            // Compute STFT once, reuse for both paths
+            const stft = computeSTFT(samples);
+            if (!stft) {
+                self.postMessage({ type: 'result', data: null });
+                return;
             }
-        }, transferables);
+
+            const { mag, nFrames, nBins } = stft;
+
+            // Standard chromagram path
+            const stdResult = processStandard(mag, nFrames, nBins);
+            const tensorsStd = prepareModelInputs(stdResult.chroma, nFrames);
+
+            // Foreground (harmonic-only) chromagram path
+            const chromaFg = processForeground(mag, nFrames, nBins);
+            const tensorsFg = prepareModelInputs(chromaFg, nFrames);
+
+            const tempo = estimateTempo(samples);
+
+            // Run inference internally (no round-trip to main thread)
+            let probsStd = [];
+            let probsFg = [];
+            if (session && tensorsStd.length > 0) {
+                probsStd = await inferWindows(tensorsStd);
+                probsFg = tensorsFg.length > 0 ? await inferWindows(tensorsFg) : [];
+            }
+
+            const transferables = [
+                stdResult.chroma.buffer,
+                stdResult.rawEnergy.buffer,
+                ...probsStd.map(p => p.buffer),
+                ...probsFg.map(p => p.buffer),
+            ];
+            self.postMessage({
+                type: 'result',
+                data: {
+                    chroma: stdResult.chroma,
+                    rawEnergy: stdResult.rawEnergy,
+                    nFrames: nFrames,
+                    probsStd: probsStd,
+                    probsFg: probsFg,
+                    tempo: tempo,
+                }
+            }, transferables);
+        } catch (err) {
+            console.error('Worker process error:', err);
+            self.postMessage({ type: 'result', data: null });
+        }
+    }
+
+    if (type === 'release') {
+        if (session) {
+            session.release();
+            session = null;
+        }
+        self.postMessage({ type: 'released' });
     }
 };
