@@ -548,4 +548,23 @@ self.onmessage = async function(e) {
         }
         self.postMessage({ type: 'released' });
     }
+
+    if (type === 'reload') {
+        // Recreate ONNX session (e.g. after visibility restore)
+        if (session) {
+            session.release();
+            session = null;
+        }
+        try {
+            session = await ort.InferenceSession.create(data.modelUrl, {
+                executionProviders: ['wasm'],
+                enableCpuMemArena: false,
+                enableMemPattern: false,
+                freeDimensionOverrides: { batch: 1 },
+            });
+            self.postMessage({ type: 'ready' });
+        } catch (err) {
+            self.postMessage({ type: 'error', error: err.message });
+        }
+    }
 };

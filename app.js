@@ -66,6 +66,7 @@ const LOCK_THRESHOLD = 2;  // consecutive same-tune updates to trigger fetch
 const OVERRIDE_THRESHOLD = 6; // consecutive cycles to break a sheet lock (~6s)
 let overrideCount = 0;
 let overrideTuneId = null;
+let pendingOverride = null;  // { tuneId, classIdx, name } when "Coming Up" is shown
 let sheetSettings = [];
 let sheetSettingIdx = 0;
 let lockedTuneEntry = null;  // key-specific tune entry for locked tune
@@ -1084,13 +1085,18 @@ function updateLockOn(top) {
                 overrideTuneId = top.id;
                 overrideCount = 1;
             }
-            if (overrideCount >= OVERRIDE_THRESHOLD) {
-                // New tune is confidently dominant — break the lock
-                unlockSheet();
-                overrideCount = 0;
-                overrideTuneId = null;
-                // Fall through to normal lock-on below
+            if (overrideCount >= OVERRIDE_THRESHOLD && !pendingOverride) {
+                // New tune is confidently dominant — show "Coming Up" and give 3s warning
+                pendingOverride = { tuneId: top.id, classIdx: top.classIdx, name: top.name };
+                lockTimeRemaining = 3;
+                updateLockUI();
+                $('sheetCtxName').textContent = `Coming Up: ${top.name}`;
+                updateHistory(top);
+                return;
             } else {
+                if (pendingOverride) {
+                    $('sheetCtxName').textContent = `Coming Up: ${pendingOverride.name}`;
+                }
                 updateHistory(top);
                 updateSheetContext(top);
                 return;
@@ -1098,6 +1104,13 @@ function updateLockOn(top) {
         } else {
             overrideCount = 0;
             overrideTuneId = null;
+            // Original tune came back — cancel pending override if active
+            if (pendingOverride) {
+                pendingOverride = null;
+                lockTimeRemaining += LOCK_TAP_SEC;  // restore lock time
+                const entry = lockedTuneEntry || tuneById[lockedTuneId];
+                if (entry) $('sheetCtxName').textContent = entry.name;
+            }
             updateHistory(top);
             updateSheetContext(top);
             return;
@@ -1349,6 +1362,7 @@ function hideSheet() {
     sheetSettingIdx = 0;
     sheetFetchId = null;
     lockCount = 0;
+    pendingOverride = null;
     if (autoScrollTimer) { clearTimeout(autoScrollTimer); autoScrollTimer = null; }
     $('sheetContext').classList.remove('visible');
 }
@@ -1356,6 +1370,15 @@ function hideSheet() {
 // ---- Sheet lock ----
 
 function addLockTime() {
+    // If user extends during "Coming Up" countdown, cancel the override
+    if (pendingOverride) {
+        pendingOverride = null;
+        overrideCount = 0;
+        overrideTuneId = null;
+        // Restore original tune name in header
+        const entry = lockedTuneEntry || tuneById[lockedTuneId];
+        if (entry) $('sheetCtxName').textContent = entry.name;
+    }
     lockTimeRemaining += LOCK_TAP_SEC;
     if (!sheetLocked) {
         sheetLocked = true;
@@ -1374,8 +1397,12 @@ function addLockTime() {
 }
 
 function unlockSheet() {
+    const override = pendingOverride;
+    pendingOverride = null;
     sheetLocked = false;
     lockTimeRemaining = 0;
+    overrideCount = 0;
+    overrideTuneId = null;
     if (lockTickInterval) { clearInterval(lockTickInterval); lockTickInterval = null; }
     // Buzz animation
     const render = $('sheetRender');
@@ -1385,6 +1412,11 @@ function unlockSheet() {
     render.classList.remove('locked');
     resetTransitionVisuals();
     updateLockUI();
+
+    // If a pending override triggered this unlock, load the new tune
+    if (override) {
+        loadSheetForTune(override.tuneId, override.classIdx);
+    }
 }
 
 function updateLockUI() {
@@ -1455,7 +1487,11 @@ function updateSheetContext(currentTop) {
     if (displayKey) metaParts.push(formatKey(displayKey));
     if (typeInfo) metaParts.push(typeInfo.timeSig);
     if (currentTempo) metaParts.push(`${currentTempo} BPM`);
-    $('sheetCtxName').textContent = entry.name;
+    if (pendingOverride) {
+        $('sheetCtxName').textContent = `Coming Up: ${pendingOverride.name}`;
+    } else {
+        $('sheetCtxName').textContent = entry.name;
+    }
     $('sheetCtxMeta').textContent = metaParts.join(' \u00b7 ');
     const conf = currentTop ? currentTop.prob : lockedTuneConf;
     $('sheetCtxConf').textContent = conf > 0 ? `${(conf * 100).toFixed(0)}%` : '';
@@ -1874,6 +1910,23 @@ async function init() {
         const tuneId = parseInt(entry.dataset.tuneId, 10);
         if (!tuneId) return;
         userSelectTune(tuneId, entry.dataset.tuneName);
+    });
+
+    // Release ONNX session when tab is hidden to free ~170MB WASM memory.
+    // Recreate when visible again (model is browser-cached, takes a few seconds).
+    let sessionReleased = false;
+    document.addEventListener('visibilitychange', () => {
+        if (!dspWorker) return;
+        if (document.hidden && !sessionReleased) {
+            sessionReleased = true;
+            dspWorker.postMessage({ type: 'release' });
+        } else if (!document.hidden && sessionReleased) {
+            sessionReleased = false;
+            dspWorker.postMessage({
+                type: 'reload',
+                data: { modelUrl: 'assets/model.onnx' }
+            });
+        }
     });
 
     // Memory usage graph (details mode)
