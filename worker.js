@@ -28,6 +28,9 @@ let hannWindow = null;
 
 // ONNX inference session
 let session = null;
+let modelUrl = null;
+let inferenceCount = 0;
+const RECYCLE_INTERVAL = 60;  // recycle session every N inference cycles (~60s at 1/s)
 
 // ---- FFT (radix-2 Cooley-Tukey) ----
 
@@ -416,6 +419,23 @@ function estimateTempo(samples) {
 
 // ---- ONNX inference ----
 
+const SESSION_OPTS = {
+    executionProviders: ['wasm'],
+    enableCpuMemArena: false,
+    enableMemPattern: false,
+    freeDimensionOverrides: { batch: 1 },
+};
+
+async function createSession() {
+    return ort.InferenceSession.create(modelUrl, SESSION_OPTS);
+}
+
+async function recycleSession() {
+    if (session) { session.release(); session = null; }
+    session = await createSession();
+    inferenceCount = 0;
+}
+
 async function inferWindows(windowTensors) {
     const allProbs = [];
     for (const tensorData of windowTensors) {
@@ -457,15 +477,11 @@ self.onmessage = async function(e) {
         }
 
         // Initialize ONNX session
+        modelUrl = data.modelUrl;
         ort.env.wasm.numThreads = 1;
         ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
         try {
-            session = await ort.InferenceSession.create(data.modelUrl, {
-                executionProviders: ['wasm'],
-                enableCpuMemArena: false,   // lower peak memory (trades some speed)
-                enableMemPattern: false,    // don't pre-allocate memory patterns
-                freeDimensionOverrides: { batch: 1 },  // we always infer one window at a time
-            });
+            session = await createSession();
             self.postMessage({ type: 'ready' });
         } catch (err) {
             self.postMessage({ type: 'error', error: err.message });
@@ -516,6 +532,12 @@ self.onmessage = async function(e) {
             if (session && tensorsStd.length > 0) {
                 probsStd = await inferWindows(tensorsStd);
                 probsFg = tensorsFg.length > 0 ? await inferWindows(tensorsFg) : [];
+                inferenceCount++;
+            }
+
+            // Periodically recycle ONNX session to reset WASM heap
+            if (session && inferenceCount >= RECYCLE_INTERVAL) {
+                await recycleSession();
             }
 
             const transferables = [
@@ -551,17 +573,8 @@ self.onmessage = async function(e) {
 
     if (type === 'reload') {
         // Recreate ONNX session (e.g. after visibility restore)
-        if (session) {
-            session.release();
-            session = null;
-        }
         try {
-            session = await ort.InferenceSession.create(data.modelUrl, {
-                executionProviders: ['wasm'],
-                enableCpuMemArena: false,
-                enableMemPattern: false,
-                freeDimensionOverrides: { batch: 1 },
-            });
+            await recycleSession();
             self.postMessage({ type: 'ready' });
         } catch (err) {
             self.postMessage({ type: 'error', error: err.message });
