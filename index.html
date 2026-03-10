@@ -275,6 +275,9 @@ button:disabled { opacity: 0.4; cursor: default; }
 .search-result-type {
     font-size: 11px; color: #c4973a; font-weight: 500; margin-left: 6px;
 }
+.search-result-keys {
+    font-size: 10px; color: #7a9470; margin-left: 6px;
+}
 
 /* ---- Chromagram ---- */
 .viz-card {
@@ -352,6 +355,13 @@ canvas { display: block; border-radius: 6px; }
 .history-type { color: #c4973a; font-weight: 500; text-transform: capitalize; }
 .history-conf { color: #6aaa3d; }
 .history-empty { color: #4a6340; font-size: 12px; text-align: center; padding: 16px 0; }
+
+/* ---- Model info ---- */
+body:not(.advanced) .model-info { display: none; }
+.model-info {
+    font-size: 11px; color: #5a7a50; text-align: center; padding: 8px 0 4px;
+    letter-spacing: 0.3px;
+}
 
 /* ---- Predictions sidebar ---- */
 .preds-card {
@@ -788,6 +798,9 @@ body:not(.advanced) .viz-card {
                 </div>
             </div>
         </div>
+
+        <!-- Model info (details mode only) -->
+        <div class="model-info" id="modelInfo"></div>
     </div>
 </div>
 

@@ -60,6 +60,7 @@ let currentTempo = null;
 let sessionHistory = [];
 let lastTopTuneId = null;
 let lockedTuneId = null;
+let lockedClassIdx = null;
 let lockedTuneConf = 0;
 let lockCount = 0;
 const LOCK_THRESHOLD = 2;  // consecutive same-tune updates to trigger fetch
@@ -1121,7 +1122,12 @@ function updateLockOn(top) {
     }
 
     if (top.id === lockedTuneId) {
-        // Same tune still locked — update confidence in place, no full re-render
+        // Same tune, but different key class — reload sheet with correct key
+        if (top.classIdx != null && top.classIdx !== lockedClassIdx) {
+            lockedTuneId = null; // allow loadSheetForTune to proceed
+            loadSheetForTune(top.id, top.classIdx);
+        }
+        // Update confidence in place, no full re-render
         lockedTuneConf = top.prob;
         updateSheetContext(top);
         if (sessionHistory.length > 0 && sessionHistory[0].id === top.id) {
@@ -1154,7 +1160,8 @@ function updateLockOn(top) {
 // User explicitly selected a tune — lock sheet and boost confidence
 function userSelectTune(tuneId, tuneName) {
     lockedTuneId = null; // allow re-fetch even if same tune
-    loadSheetForTune(tuneId);
+    lockedClassIdx = null;
+    loadSheetForTune(tuneId);  // no classIdx → loads all settings from tuneById
     if (tuneName) $('topTuneName').textContent = tuneName;
     renderHistory();
 
@@ -1168,8 +1175,10 @@ function userSelectTune(tuneId, tuneName) {
 }
 
 function loadSheetForTune(tuneId, classIdx) {
-    if (lockedTuneId === tuneId) return;
+    // Skip if same tune AND same key class (avoid redundant re-render)
+    if (lockedTuneId === tuneId && (classIdx == null || classIdx === lockedClassIdx)) return;
     lockedTuneId = tuneId;
+    lockedClassIdx = classIdx ?? null;
     autoScrollTimer = null; // allow auto-scroll for this new tune
 
     // Use key-specific class entry if available (from inference),
@@ -1299,7 +1308,8 @@ function renderSheet() {
     // Build ABC with proper headers from tune metadata
     const entry = lockedTuneEntry || tuneById[lockedTuneId];
     const tuneType = entry?.type || '';
-    const keyStr = entry?.key || '';
+    // Use per-setting key if available, fall back to entry key
+    const keyStr = setting.key || entry?.key || '';
     const typeInfo = TYPE_INFO[tuneType];
     const meter = typeInfo?.timeSig || '4/4';
     const noteLen = '1/8';
@@ -1334,6 +1344,7 @@ function renderSheet() {
 function hideSheet() {
     $('sheetPanel').classList.remove('open');
     lockedTuneId = null;
+    lockedClassIdx = null;
     sheetSettings = [];
     sheetSettingIdx = 0;
     sheetFetchId = null;
@@ -1438,7 +1449,10 @@ function updateSheetContext(currentTop) {
     const typeInfo = TYPE_INFO[entry.type];
     const metaParts = [];
     if (typeInfo) metaParts.push(typeInfo.label);
-    if (entry.key) metaParts.push(formatKey(entry.key));
+    // Show current setting's key if available, otherwise entry-level key
+    const currentSettingKey = sheetSettings[sheetSettingIdx]?.key;
+    const displayKey = currentSettingKey || entry.key;
+    if (displayKey) metaParts.push(formatKey(displayKey));
     if (typeInfo) metaParts.push(typeInfo.timeSig);
     if (currentTempo) metaParts.push(`${currentTempo} BPM`);
     $('sheetCtxName').textContent = entry.name;
@@ -1626,10 +1640,18 @@ async function init() {
                 for (const s of entry.settings) {
                     if (!existingIds.has(s.id)) existing.settings.push(s);
                 }
+                // Track all keys this tune has classes for
+                if (entry.key && !existing.keys.includes(entry.key)) {
+                    existing.keys.push(entry.key);
+                }
             } else {
-                tuneById[entry.id] = { ...entry, settings: [...entry.settings] };
+                tuneById[entry.id] = { ...entry, settings: [...entry.settings], keys: entry.key ? [entry.key] : [] };
             }
         }
+        // Populate model info
+        const nClasses = Object.keys(tuneIndex).length;
+        const nTunes = Object.keys(tuneById).length;
+        $('modelInfo').textContent = `EfficientNet-B0 · ${nTunes.toLocaleString()} tunes · ${nClasses.toLocaleString()} classes`;
     } catch (e) {
         status.textContent = 'Failed to load tune index: ' + e.message;
         return;
@@ -1797,6 +1819,7 @@ async function init() {
     // Build sorted list of all tunes for search
     const allTunes = Object.values(tuneById).map(t => ({
         id: t.id, name: t.name, type: t.type || '',
+        keys: t.keys || [],
         nameLower: t.name.toLowerCase(),
     })).sort((a, b) => a.name.localeCompare(b.name));
 
@@ -1814,7 +1837,10 @@ async function init() {
             searchResults.innerHTML = matches.map(t => {
                 const typeLabel = formatType(t.type);
                 const typeHtml = typeLabel ? `<span class="search-result-type">${typeLabel}</span>` : '';
-                return `<div class="search-result-row" data-tune-id="${t.id}"><span class="search-result-name">${t.name}</span>${typeHtml}</div>`;
+                const keysHtml = t.keys.length > 1
+                    ? `<span class="search-result-keys">${t.keys.map(formatKey).join(', ')}</span>`
+                    : (t.keys.length === 1 ? `<span class="search-result-keys">${formatKey(t.keys[0])}</span>` : '');
+                return `<div class="search-result-row" data-tune-id="${t.id}"><span class="search-result-name">${t.name}</span>${typeHtml}${keysHtml}</div>`;
             }).join('');
         }
         searchResults.classList.remove('hidden');
