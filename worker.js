@@ -462,6 +462,9 @@ self.onmessage = async function(e) {
         try {
             session = await ort.InferenceSession.create(data.modelUrl, {
                 executionProviders: ['wasm'],
+                enableCpuMemArena: false,   // lower peak memory (trades some speed)
+                enableMemPattern: false,    // don't pre-allocate memory patterns
+                freeDimensionOverrides: { batch: 1 },  // we always infer one window at a time
             });
             self.postMessage({ type: 'ready' });
         } catch (err) {
